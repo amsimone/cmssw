@@ -42,6 +42,8 @@
 #include "Alignment/TrackerAlignment/interface/AlignableTracker.h"
 #include "Alignment/MuonAlignment/interface/AlignableMuon.h"
 #include "Alignment/CommonAlignment/interface/AlignableExtras.h"
+#include "Alignment/CommonAlignment/interface/AlignableObjectId.h"
+
 
 #include "CondFormats/AlignmentRecord/interface/GlobalPositionRcd.h"
 #include "CondFormats/AlignmentRecord/interface/TrackerAlignmentRcd.h"
@@ -341,6 +343,246 @@ bool MillePedeAlignmentAlgorithm::storeAlignments() {
   }
 }
 
+
+
+// Recursive function to build the hierarchy
+void MillePedeAlignmentAlgorithm::BuildHierarchy(const Alignable* alignable) {
+   Alignable* mother = alignable->mother();
+
+  if (mother != nullptr) {
+    hierarchy[mother].push_back(alignable);
+    BuildHierarchy(mother); // Recursively process the mother
+  }
+}
+
+
+
+
+// Recursive function to process each level of the hierarchy
+void MillePedeAlignmentAlgorithm::resolveRigidBodyHierarchyLevel(const Alignable* mother, const std::vector<const Alignable*>& daughters, int level) {
+
+  // Process the current level
+  for (const auto* daughter : daughters) {
+    //compute derivatives transformation from mothers to daughters frame
+    const ParametersToParametersDerivatives p2pDerivs(*daughter, *mother);
+    if (!p2pDerivs.isOK()) {
+      throw cms::Exception("BadConfig") << "AlignmentParameterStore::hierarchyConstraints"
+                                        << " Bad match of types of AlignmentParameters classes.\n";
+      return;
+    }
+
+
+  }
+
+  // Recursively process the next level
+  for (const auto* daughter : daughters) {
+    const auto& next_daughters = hierarchy.find(daughter);
+    if (next_daughters != hierarchy.end()) {
+      resolveRigidBodyHierarchyLevel(daughter, next_daughters->second, level + 1);
+    }
+  }
+}
+
+
+bool MillePedeAlignmentAlgorithm::resolveRigidBodyHierarchy(const align::Alignables &alignables) {
+
+  ///fill alinables hierarchy structure
+  for (Alignable* alignable : alignables) {
+    BuildHierarchy(alignable);
+  }
+  
+  //find the top-level alignables
+  align::Alignables topLevelAlignables;
+  // Create a set to keep track of alignables already processed
+  std::unordered_set<Alignable*> processedAlignables;
+  
+  //loop over alignables
+  for (Alignable* ali : alignables) {
+     Alignable* currentAlignable = ali;
+    
+    // Traverse the hierarchy upwards until reaching the top level
+    while (currentAlignable != nullptr) {
+      
+      // If the current alignable has no mother, it's at the top level
+      if (currentAlignable->mother() == nullptr) {
+	// Check if it's already added to the top level list
+	if (processedAlignables.find(currentAlignable) == processedAlignables.end()) {
+	  topLevelAlignables.push_back(currentAlignable);
+	  processedAlignables.insert(currentAlignable);
+	}
+	break; // Exit the loop as we've reached the top level
+      }
+      
+      // Move to the mother alignable in the hierarchy
+      currentAlignable = currentAlignable->mother();
+    }
+  }
+
+  for (const auto* topLevelAlignable : topLevelAlignables) {
+    const auto& daughters = hierarchy.find(topLevelAlignable);
+    if (daughters != hierarchy.end()) {
+      resolveRigidBodyHierarchyLevel(topLevelAlignable, daughters->second, 0);
+    }
+  }
+
+  // Return true if top-level alignables were found, false otherwise
+  return !topLevelAlignables.empty();
+}
+
+
+
+  //opzione 1 from low to top
+//  for (const auto &ali : alignables) {
+//    AlignmentParameters *params = ali->alignmentParameters();
+//    //ali = ali->daughter();
+//    Alignable* aliM = ali->mother();
+//    align::ID id = ali->id();
+//    //    align::StructureType alignableObjectId = ali->alignableObjectId();
+//    //    std::unique_ptr<AlignableObjectId> alignableObjectId_;
+//
+//    edm::LogError("MilleAlignmentAlgorithm") << "Looping over hierarchies: " 
+//					     << Form(" %i with ID %d (subdet %d)", ali->alignableObjectId(), id, DetId(id).subdetId())
+//					     << std::endl;
+//
+//  }
+
+
+
+  ///opzione 2
+  //for (const auto &iAli : alis) {
+  //  std::set<const Alignable *> myNoHieraCollection;  /// Alignables deselected for hierarchy constr.                                             
+  //  myNoHieraCollection.clear();  // just in case of re-use...                                                                                        
+  //  bool isInHiera = false;  // Check whether Alignable is really part of hierarchy:                                                               
+  //  auto mother = iAli;
+  //  while ((mother = mother->mother())) {
+  //    if (mother->alignmentParameters())
+  //	isInHiera = true;  // could 'break;', but loop is short                                                                                    
+  //  }
+  //  myNoHieraCollection.insert(iAli);
+  //}
+
+
+
+  //opzione 3 
+  //align::Alignables aliDaughts;
+  //for (const auto &iA : alis) {
+  //  aliDaughts.clear();
+  //  if (!(iA->firstCompsWithParams(aliDaughts))) {
+  //    edm::LogWarning("Alignment") << "@SUB=PedeSteerer::hierarchyConstraints"
+  //                                 << "Some but not all daughters of "
+  //                                 << alignableObjectId_.idToString(iA->alignableObjectId()) << " with params!";
+  //  }
+  //}
+
+
+
+
+
+  /// Provide all components, subcomponents, subsub... etc. of Alignable
+  /// down to AlignableDetUnit, except for 'single childs' like e.g.
+  /// AlignableDetUnits of AlignableDets representing single sided SiStrip
+  /// modules. (for performance reason by adding to argument)
+  //  virtual void recursiveComponents(Alignables& result) const = 0;
+
+
+
+  ////useful functions
+  // https://github.com/cms-sw/cmssw/blob/99f2750c476c243522d4599697496b1af4c29ce7/Alignment/CommonAlignment/src/Alignable.cc
+  /// Return the list of lowest daughters (non-composites) of Alignable.
+  /// Contain itself if Alignable is a unit.
+  //const Alignables& deepComponents() const { return theDeepComponents; }
+
+  /// Steps down hierarchy until components with AlignmentParameters are found
+  /// and adds them to argument. True either if no such components are found
+  /// or if all branches of components end with such components (i.e. 'consistent').
+//__________________________________________________________________________________________________
+//   bool Alignable::firstCompsWithParams(Alignables& paramComps) const {
+//    bool isConsistent = true;
+//    bool hasAliComp = false;  // whether there are any (grand-) daughters with parameters
+//    bool first = true;
+//    const auto& comps = this->components();
+//    for (const auto& iComp : comps) {
+//      if (iComp->alignmentParameters()) {  // component has parameters itself
+//
+//	paramComps.push_back(iComp);
+//	if (!first && !hasAliComp)
+//	  isConsistent = false;
+//	hasAliComp = true;
+//      } else {
+//	const unsigned int nCompBefore = paramComps.size();
+//	if (!(iComp->firstCompsWithParams(paramComps))) {
+//	  isConsistent = false;  // problem down in hierarchy
+//	}
+//	if (paramComps.size() != nCompBefore) {
+//	  if (!first && !hasAliComp)
+//	    isConsistent = false;
+//	  hasAliComp = true;
+//	} else if (hasAliComp) {  // no components with params, but previous component did have comps.
+//	  isConsistent = false;
+//	}
+//      }
+//      first = false;
+//    }
+//
+//    return isConsistent;
+//  }
+//
+
+
+
+  /// Steps down hierarchy to the lowest level of components with AlignmentParameters
+  /// and adds them to argument. True either if no such components are found
+  /// or if all branches of components end with such components (i.e. 'consistent').
+//  //__________________________________________________________________________________________________
+//  bool Alignable::lastCompsWithParams(Alignables& paramComps) const {
+//    bool isConsistent = true;
+//    bool hasAliComp = false;
+//    bool first = true;
+//    const auto& comps = this->components();
+//    for (const auto& iComp : comps) {
+//      const auto nCompsBefore = paramComps.size();
+//      isConsistent = iComp->lastCompsWithParams(paramComps);
+//      if (paramComps.size() == nCompsBefore) {
+//	if (iComp->alignmentParameters()) {
+//	  paramComps.push_back(iComp);
+//	  if (!first && !hasAliComp)
+//	    isConsistent = false;
+//	  hasAliComp = true;
+//	}
+//      } else {
+//	if (hasAliComp) {
+//	  isConsistent = false;
+//	}
+//	if (!first && !hasAliComp)
+//	  isConsistent = false;
+//	hasAliComp = true;
+//      }
+//      first = false;
+//    }
+//
+//    return isConsistent;
+//  }
+
+
+
+
+  //  for (align::Alignables::const_iterator iComp = aliComps.begin(), iCompE = aliComps.end(); iComp != iCompE; ++iComp) {
+  //    const ParametersToParametersDerivatives p2pDerivs(**iComp, *ali);
+  //  }
+///  for (loop over mothers)
+///    {
+///    for (loop over daughters)
+///      {
+///	///For each daughter get the (rigid body parameter) transformation to transform the 'mother corrections' to daughter frame
+///	ParametersToParametersDerivatives(&daughter, &mother);
+///      }
+///
+///    ///reset mother  corrections to ZERO
+///    }
+
+
+
+
 //____________________________________________________
 bool MillePedeAlignmentAlgorithm::setParametersForRunRange(const RunRange &runrange) {
   if (this->isMode(myPedeReadBit)) {
@@ -355,7 +597,7 @@ bool MillePedeAlignmentAlgorithm::setParametersForRunRange(const RunRange &runra
     }
 
     // Needed to shut up later warning from checkAliParams:
-    theAlignmentParameterStore->resetParameters();
+   theAlignmentParameterStore->resetParameters();
     // To avoid that they keep values from previous IOV if no new one in pede result
     this->buildUserVariables(theAlignables);
 
@@ -363,6 +605,10 @@ bool MillePedeAlignmentAlgorithm::setParametersForRunRange(const RunRange &runra
       edm::LogError("Alignment") << "@SUB=MillePedeAlignmentAlgorithm::setParametersForRunRange"
                                  << "Problems reading pede result, but applying!";
     }
+
+    // Add your 'resolveRigidBodyHierarchy' step here:
+    this->resolveRigidBodyHierarchy(theAlignables);  
+
     theAlignmentParameterStore->applyParameters();
 
     this->doIO(++theLastWrittenIov);  // pre-increment!
@@ -490,7 +736,7 @@ void MillePedeAlignmentAlgorithm::run(const edm::EventSetup &setup, const EventI
   const auto tracksPerTraj = theTrajectoryFactory->tracksPerTrajectory();
   for (auto iRefTraj = trajectories.cbegin(), iRefTrajE = trajectories.cend(); iRefTraj != iRefTrajE;
        ++iRefTraj, ++refTrajCount) {
-    const RefTrajColl::value_type &refTrajPtr = *iRefTraj;
+    RefTrajColl::value_type refTrajPtr = *iRefTraj;
     if (theMonitor)
       theMonitor->fillRefTrajectory(refTrajPtr);
 
@@ -722,12 +968,8 @@ void MillePedeAlignmentAlgorithm::endRun(const EndRunInfo &runInfo, const edm::E
 void MillePedeAlignmentAlgorithm::beginLuminosityBlock(const edm::EventSetup &) {
   if (!runAtPCL_)
     return;
-  if (this->isMode(myMilleBit)) {
+  if (this->isMode(myMilleBit))
     theMille->resetOutputFile();
-    theBinary.reset();  // GBL output has to be considered since same binary file is used
-    theBinary = std::make_unique<MilleBinary>((theDir + theConfig.getParameter<std::string>("binaryFile")).c_str(),
-                                              theGblDoubleBinary);
-  }
 }
 
 //____________________________________________________

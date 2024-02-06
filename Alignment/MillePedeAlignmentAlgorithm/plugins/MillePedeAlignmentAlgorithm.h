@@ -13,6 +13,7 @@
 
 #include "Alignment/CommonAlignmentAlgorithm/interface/AlignmentAlgorithmPluginFactory.h"
 #include "Alignment/CommonAlignmentAlgorithm/interface/AlignmentAlgorithmBase.h"
+#include "Alignment/CommonAlignmentParametrization/interface/ParametersToParametersDerivatives.h"
 
 #include "FWCore/ParameterSet/interface/ParameterSet.h"
 #include "FWCore/Framework/interface/ConsumesCollector.h"
@@ -116,9 +117,15 @@ public:
   /// called at end of luminosity block
   void endLuminosityBlock(const edm::EventSetup &) override;
 
+  /*   virtual void beginLuminosityBlock(const edm::EventSetup &setup) {} */
+  /*   virtual void endLuminosityBlock(const edm::EventSetup &setup) {} */
+
   /// Called in order to pass parameters to alignables for a specific run
   /// range in case the algorithm supports run range dependent alignment.
   bool setParametersForRunRange(const RunRange &runrange) override;
+
+  // Fixes conversion of rigid body parameters between hierarchies
+  bool resolveRigidBodyHierarchy(const align::Alignables &alignables);
 
 private:
   enum MeasurementDirection { kLocalX = 0, kLocalY };
@@ -269,6 +276,9 @@ private:
   //
   bool areIOVsSpecified() const;
 
+  void BuildHierarchy(const Alignable* alignable); 
+  void resolveRigidBodyHierarchyLevel(const Alignable* mother, 
+				      const std::vector<const Alignable*>& daughters, int level);
   //--------------------------------------------------------
   // Data members
   //--------------------------------------------------------
@@ -311,6 +321,11 @@ private:
   // CHK for GBL
   std::unique_ptr<gbl::MilleBinary> theBinary;
   bool theGblDoubleBinary;
+
+  // Define a custom data structure to represent the alignables hierarchy                                                                                       
+  std::unordered_map<const Alignable*, std::vector<const Alignable*>> hierarchy;
+
+
 
   const bool runAtPCL_;
   const bool ignoreHitsWithoutGlobalDerivatives_;
