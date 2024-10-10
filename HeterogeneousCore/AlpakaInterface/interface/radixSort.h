@@ -132,9 +132,9 @@ namespace cms::alpakatools {
       auto& ibs = alpaka::declareSharedVar<int, __COUNTER__>(acc);
       auto& currentSortingPass = alpaka::declareSharedVar<int, __COUNTER__>(acc);
 
-      ALPAKA_ASSERT_OFFLOAD(size > 0);
+      ALPAKA_ASSERT_ACC(size > 0);
       // TODO: is this a hard requirement?
-      ALPAKA_ASSERT_OFFLOAD(blockDimension >= binsNumber);
+      ALPAKA_ASSERT_ACC(blockDimension >= binsNumber);
 
       currentSortingPass = initialSortingPass;
 
@@ -283,7 +283,7 @@ namespace cms::alpakatools {
         */
 
         alpaka::syncBlockThreads(acc);
-        ALPAKA_ASSERT_OFFLOAD(c[0] == 0);
+        ALPAKA_ASSERT_ACC(c[0] == 0);
 
         // swap (local, ok)
         auto t = j;
@@ -297,8 +297,8 @@ namespace cms::alpakatools {
       }
 
       if ((dataBits != 8) && (0 == (NS & 1)))
-        ALPAKA_ASSERT_OFFLOAD(j ==
-                              ind);  // dataBits/binBits is even so ind is correct (the result is in the right location)
+        ALPAKA_ASSERT_ACC(j ==
+                          ind);  // dataBits/binBits is even so ind is correct (the result is in the right location)
 
       // TODO this copy is (doubly?) redundant with the reorder
       if (j != ind)  // odd number of sorting passes, we need to move the result to the right array (ind[])
@@ -353,8 +353,8 @@ namespace cms::alpakatools {
             typename T,
             int NS = sizeof(T),  // number of significant bytes to use in sorting
             typename std::enable_if<requires_single_thread_per_block_v<TAcc>, T>::type* = nullptr>
-  ALPAKA_FN_ACC ALPAKA_FN_INLINE void radixSort(
-      const TAcc& acc, T const* a, uint16_t* ind, uint16_t* ind2, uint32_t size) {
+  /* not ALPAKA_FN_ACC to avoid trying to compile it for the CUDA or ROCm back-ends */
+  ALPAKA_FN_INLINE void radixSort(const TAcc& acc, T const* a, uint16_t* ind, uint16_t* ind2, uint32_t size) {
     static_assert(requires_single_thread_per_block_v<TAcc>, "CPU sort (not a radixSort) called wtth wrong accelerator");
     // Initialize the index array
     std::iota(ind, ind + size, 0);

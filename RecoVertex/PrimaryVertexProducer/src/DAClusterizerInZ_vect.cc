@@ -208,8 +208,12 @@ DAClusterizerInZ_vect::track_t DAClusterizerInZ_vect::fill(const vector<reco::Tr
     sumtkwt += t_tkwt;
   }
 
-  tks.extractRaw();
-  tks.osumtkwt = sumtkwt > 0 ? 1. / sumtkwt : 0.;
+  if (sumtkwt > 0) {
+    tks.extractRaw();
+    tks.osumtkwt = 1. / sumtkwt;
+  } else {
+    tks.osumtkwt = 0.;
+  }
 
 #ifdef DEBUG
   if (DEBUGLEVEL > 0) {
@@ -500,6 +504,8 @@ bool DAClusterizerInZ_vect::merge(vertex_t& y, track_t& tks, double& beta) const
 
     if (rho > 0) {
       y.zvtx[k] = (y.rho[k] * y.zvtx[k] + y.rho[k + 1] * y.zvtx[k + 1]) / rho;
+      if (not edm::isFinite(y.zvtx[k]))
+        y.zvtx[k] = 0.5 * (y.zvtx[k] + y.zvtx[k + 1]);
     } else {
       y.zvtx[k] = 0.5 * (y.zvtx[k] + y.zvtx[k + 1]);
     }
@@ -659,7 +665,7 @@ bool DAClusterizerInZ_vect::split(const double beta, track_t& tks, vertex_t& y, 
   std::vector<std::pair<double, unsigned int>> critical;
   for (unsigned int k = 0; k < nv; k++) {
     double Tc = 2 * y.swE[k] / y.sw[k];
-    if (beta * Tc > threshold) {
+    if (edm::isFinite(Tc) and beta * Tc > threshold) {
       critical.push_back(make_pair(Tc, k));
     }
   }
@@ -742,6 +748,10 @@ bool DAClusterizerInZ_vect::split(const double beta, track_t& tks, vertex_t& y, 
       split = true;
       double pk1 = p1 * y.rho[k] / (p1 + p2);
       double pk2 = p2 * y.rho[k] / (p1 + p2);
+
+      if (not(edm::isFinite(pk1) and edm::isFinite(pk2)))
+        continue;
+
       y.zvtx[k] = z2;
       y.rho[k] = pk2;
       y.insertItem(k, z1, pk1, tks);
@@ -768,13 +778,12 @@ bool DAClusterizerInZ_vect::split(const double beta, track_t& tks, vertex_t& y, 
 
 vector<TransientVertex> DAClusterizerInZ_vect::vertices_no_blocks(const vector<reco::TransientTrack>& tracks) const {
   track_t&& tks = fill(tracks);
-  tks.extractRaw();
-
-  double rho0 = 0.0;  // start with no outlier rejection
-
   vector<TransientVertex> clusters;
   if (tks.getSize() == 0)
     return clusters;
+  tks.extractRaw();
+
+  double rho0 = 0.0;  // start with no outlier rejection
 
   vertex_t y;  // the vertex prototypes
 
@@ -1313,7 +1322,8 @@ vector<TransientVertex> DAClusterizerInZ_vect::fill_vertices(double beta, double
         zerror_squared = sumwp / (sumw * sumw);
         y.zvtx[k] = sumwz / sumw;
       }
-      const auto& bs = vertexTracks[0].stateAtBeamLine().beamSpot();
+
+      reco::BeamSpot bs = vertexTracks[0].stateAtBeamLine().beamSpot();
       GlobalPoint pos(bs.x(y.zvtx[k]), bs.y(y.zvtx[k]), y.zvtx[k]);
       const float xerror_squared = pow(bs.BeamWidthX(), 2);
       const float yerror_squared = pow(bs.BeamWidthY(), 2);

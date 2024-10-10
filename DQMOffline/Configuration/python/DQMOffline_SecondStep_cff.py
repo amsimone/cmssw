@@ -115,7 +115,7 @@ DQMOffline_SecondStep_PrePOG = cms.Sequence( DQMOffline_SecondStepTracking *
 
 
 DQMOffline_SecondStep_PrePOG_Express = cms.Sequence( DQMOffline_SecondStepTracking *
-                                             DQMOffline_SecondStepMUO *
+                                             #DQMOffline_SecondStepMUO *
                                              #DQMOffline_SecondStepEGamma *
                                              DQMOffline_SecondStepTrigger *
                                              DQMOffline_SecondStepBTag *
@@ -162,7 +162,6 @@ DQMOffline_SecondStepPOGMC = cms.Sequence( DQMOffline_SecondStep_PrePOGMC *
 
 # Harvest
 from DQMOffline.JetMET.dataCertificationJetMET_cff import *
-from DQM.SiOuterTracker.OuterTrackerClientConfig_cff import *
 from DQM.CTPPS.ctppsDQM_cff import *
 from Validation.RecoTau.DQMSequences_cfi import *
 from DQM.TrackingMonitorClient.pixelTrackingEffFromHitPattern_cff import *
@@ -232,7 +231,6 @@ DQMHarvestPixelTracking = cms.Sequence( pixelTrackingEffFromHitPattern *
                                         siPixelHeterogeneousDQMHarvesting )
 
 DQMHarvestOuterTracker = cms.Sequence(
-                                 OuterTrackerClient *
                                  dqmFEDIntegrityClient *
                                  DQMMessageLoggerClientSeq *
                                  dqmFastTimerServiceClient

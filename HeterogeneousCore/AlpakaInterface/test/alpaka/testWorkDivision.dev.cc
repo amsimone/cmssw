@@ -1,5 +1,9 @@
+#include <cstdint>
 #include <vector>
 
+#include <alpaka/alpaka.hpp>
+
+#include "FWCore/Utilities/interface/stringize.h"
 #include "HeterogeneousCore/AlpakaInterface/interface/devices.h"
 #include "HeterogeneousCore/AlpakaInterface/interface/config.h"
 #include "HeterogeneousCore/AlpakaInterface/interface/memory.h"
@@ -11,26 +15,16 @@ using namespace ALPAKA_ACCELERATOR_NAMESPACE;
 // Kernel running a loop over threads/elements
 // One function with multiple flavors
 
-// The type of elements_with_stride
+// The type of uniform_elements
 enum class RangeType { Default, ExtentLimited, ExtentLimitedWithShift };
 
 // The concurrency scope between threads
 enum class LoopScope { Block, Grid };
 
-// Utility for one time initializations
-template <LoopScope loopScope, typename TAcc>
-bool constexpr firstInLoopRange(TAcc const& acc) {
-  if constexpr (loopScope == LoopScope::Block)
-    return !alpaka::getIdx<alpaka::Block, alpaka::Threads>(acc)[0u];
-  if constexpr (loopScope == LoopScope::Grid)
-    return !alpaka::getIdx<alpaka::Grid, alpaka::Threads>(acc)[0u];
-  assert(false);
-}
-
 template <RangeType rangeType, LoopScope loopScope, typename TAcc>
-size_t constexpr expectedCount(TAcc const& acc, size_t size, size_t shift) {
+size_t constexpr expectedCount(TAcc const& acc, size_t skip, size_t size) {
   if constexpr (rangeType == RangeType::ExtentLimitedWithShift)
-    return shift < size ? size - shift : 0;
+    return skip < size ? size - skip : 0;
   else if constexpr (rangeType == RangeType::ExtentLimited)
     return size;
   else /* rangeType == RangeType::Default */
@@ -41,9 +35,9 @@ size_t constexpr expectedCount(TAcc const& acc, size_t size, size_t shift) {
 }
 
 template <RangeType rangeType, LoopScope loopScope>
-size_t constexpr expectedCount(WorkDiv1D const& workDiv, size_t size, size_t shift) {
+size_t constexpr expectedCount(WorkDiv1D const& workDiv, size_t skip, size_t size) {
   if constexpr (rangeType == RangeType::ExtentLimitedWithShift)
-    return shift < size ? size - shift : 0;
+    return skip < size ? size - skip : 0;
   else if constexpr (rangeType == RangeType::ExtentLimited)
     return size;
   else /* rangeType == RangeType::Default */
@@ -56,31 +50,32 @@ size_t constexpr expectedCount(WorkDiv1D const& workDiv, size_t size, size_t shi
 template <RangeType rangeType, LoopScope loopScope>
 struct testWordDivisionDefaultRange {
   template <typename TAcc>
-  ALPAKA_FN_ACC void operator()(TAcc const& acc, size_t size, size_t shift, size_t* globalCounter) const {
+  ALPAKA_FN_ACC void operator()(TAcc const& acc, size_t size, size_t skip, size_t* globalCounter) const {
     size_t& counter =
         (loopScope == LoopScope::Grid ? *globalCounter : alpaka::declareSharedVar<size_t, __COUNTER__>(acc));
     // Init the counter for block range. Grid range does so my mean of memset.
     if constexpr (loopScope == LoopScope::Block) {
-      if (firstInLoopRange<loopScope>(acc))
+      if (cms::alpakatools::once_per_block(acc)) {
         counter = 0;
+      }
       alpaka::syncBlockThreads(acc);
     }
     // The loop we are testing
     if constexpr (rangeType == RangeType::Default)
-      for ([[maybe_unused]] auto idx : elements_with_stride(acc))
+      for ([[maybe_unused]] auto idx : uniform_elements(acc))
         alpaka::atomicAdd(acc, &counter, 1ul, alpaka::hierarchy::Blocks{});
     else if constexpr (rangeType == RangeType::ExtentLimited)
-      for ([[maybe_unused]] auto idx : elements_with_stride(acc, size))
+      for ([[maybe_unused]] auto idx : uniform_elements(acc, size))
         alpaka::atomicAdd(acc, &counter, 1ul, alpaka::hierarchy::Blocks{});
     else if constexpr (rangeType == RangeType::ExtentLimitedWithShift)
-      for ([[maybe_unused]] auto idx : elements_with_stride(acc, shift, size))
+      for ([[maybe_unused]] auto idx : uniform_elements(acc, skip, size))
         alpaka::atomicAdd(acc, &counter, 1ul, alpaka::hierarchy::Blocks{});
     alpaka::syncBlockThreads(acc);
     // Check the result. Grid range will check by memcpy-ing the result.
     if constexpr (loopScope == LoopScope::Block) {
-      if (firstInLoopRange<loopScope>(acc)) {
-        auto expected = expectedCount<rangeType, loopScope>(acc, size, shift);
-        assert(counter == expected);
+      if (cms::alpakatools::once_per_block(acc)) {
+        auto expected = expectedCount<rangeType, loopScope>(acc, skip, size);
+        ALPAKA_ASSERT_ACC(counter == expected);
       }
     }
   }
@@ -90,9 +85,9 @@ int main() {
   // get the list of devices on the current platform
   auto const& devices = cms::alpakatools::devices<Platform>();
   if (devices.empty()) {
-    std::cout << "No devices available on the platform " << EDM_STRINGIZE(ALPAKA_ACCELERATOR_NAMESPACE)
-              << ", the test will be skipped.\n";
-    return 0;
+    std::cerr << "No devices available for the " EDM_STRINGIZE(ALPAKA_ACCELERATOR_NAMESPACE) " backend, "
+      "the test will be skipped.\n";
+    exit(EXIT_FAILURE);
   }
 
   for (auto const& device : devices) {
@@ -106,16 +101,16 @@ int main() {
     for (size_t blocks = 1; blocks < GridSize * 3; blocks++)
       for (auto sizeFuzz :
            std::initializer_list<ssize_t>{-10 * BlockSize / 13, -BlockSize / 2, -1, 0, 1, BlockSize / 2})
-        for (auto shift : std::initializer_list<ssize_t>{0,
-                                                         1,
-                                                         BlockSize / 2,
-                                                         BlockSize - 1,
-                                                         BlockSize,
-                                                         BlockSize + 1,
-                                                         BlockSize + BlockSize / 2,
-                                                         2 * BlockSize - 1,
-                                                         2 * BlockSize,
-                                                         2 * BlockSize + 1}) {
+        for (auto skip : std::initializer_list<ssize_t>{0,
+                                                        1,
+                                                        BlockSize / 2,
+                                                        BlockSize - 1,
+                                                        BlockSize,
+                                                        BlockSize + 1,
+                                                        BlockSize + BlockSize / 2,
+                                                        2 * BlockSize - 1,
+                                                        2 * BlockSize,
+                                                        2 * BlockSize + 1}) {
           // Grid level iteration: we need to initialize/check at the grid level
           // Default range
           alpaka::memset(queue, counter_d, 0);
@@ -125,12 +120,12 @@ int main() {
               alpaka::createTaskKernel<Acc1D>(workdiv,
                                               testWordDivisionDefaultRange<RangeType::Default, LoopScope::Grid>{},
                                               blocks * BlockSize + sizeFuzz,
-                                              shift,
+                                              skip,
                                               counter_d.data()));
           alpaka::memcpy(queue, counter_h, counter_d);
           alpaka::wait(queue);
           auto expected =
-              expectedCount<RangeType::Default, LoopScope::Grid>(workdiv, blocks * BlockSize + sizeFuzz, shift);
+              expectedCount<RangeType::Default, LoopScope::Grid>(workdiv, skip, blocks * BlockSize + sizeFuzz);
           assert(*counter_h.data() == expected);
 
           // ExtentLimited range
@@ -140,12 +135,12 @@ int main() {
               alpaka::createTaskKernel<Acc1D>(workdiv,
                                               testWordDivisionDefaultRange<RangeType::ExtentLimited, LoopScope::Grid>{},
                                               blocks * BlockSize + sizeFuzz,
-                                              shift,
+                                              skip,
                                               counter_d.data()));
           alpaka::memcpy(queue, counter_h, counter_d);
           alpaka::wait(queue);
           expected =
-              expectedCount<RangeType::ExtentLimited, LoopScope::Grid>(workdiv, blocks * BlockSize + sizeFuzz, shift);
+              expectedCount<RangeType::ExtentLimited, LoopScope::Grid>(workdiv, skip, blocks * BlockSize + sizeFuzz);
           assert(*counter_h.data() == expected);
 
           // ExtentLimitedWithShift range
@@ -155,12 +150,12 @@ int main() {
                               workdiv,
                               testWordDivisionDefaultRange<RangeType::ExtentLimitedWithShift, LoopScope::Grid>{},
                               blocks * BlockSize + sizeFuzz,
-                              shift,
+                              skip,
                               counter_d.data()));
           alpaka::memcpy(queue, counter_h, counter_d);
           alpaka::wait(queue);
           expected = expectedCount<RangeType::ExtentLimitedWithShift, LoopScope::Grid>(
-              workdiv, blocks * BlockSize + sizeFuzz, shift);
+              workdiv, skip, blocks * BlockSize + sizeFuzz);
           assert(*counter_h.data() == expected);
 
           // Block level auto tests
@@ -169,21 +164,21 @@ int main() {
               alpaka::createTaskKernel<Acc1D>(workdiv,
                                               testWordDivisionDefaultRange<RangeType::Default, LoopScope::Grid>{},
                                               blocks * BlockSize + sizeFuzz,
-                                              shift,
+                                              skip,
                                               counter_d.data()));
           alpaka::enqueue(
               queue,
               alpaka::createTaskKernel<Acc1D>(workdiv,
                                               testWordDivisionDefaultRange<RangeType::ExtentLimited, LoopScope::Grid>{},
                                               blocks * BlockSize + sizeFuzz,
-                                              shift,
+                                              skip,
                                               counter_d.data()));
           alpaka::enqueue(queue,
                           alpaka::createTaskKernel<Acc1D>(
                               workdiv,
                               testWordDivisionDefaultRange<RangeType::ExtentLimitedWithShift, LoopScope::Grid>{},
                               blocks * BlockSize + sizeFuzz,
-                              shift,
+                              skip,
                               counter_d.data()));
         }
     alpaka::wait(queue);

@@ -19,12 +19,9 @@ def applySubstructure( process, postfix="" ) :
     setattr(process,'ak8PFJetsPuppiSoftDrop'+postfix, ak8PFJetsPuppiSoftDrop.clone( src = 'ak8PFJetsPuppiConstituents'+postfix+':constituents' ))
     from RecoJets.JetProducers.ak8PFJetsPuppi_groomingValueMaps_cfi import ak8PFJetsPuppiSoftDropMass
     setattr(process,'ak8PFJetsPuppiSoftDropMass'+postfix, ak8PFJetsPuppiSoftDropMass.clone())
-    from Configuration.Eras.Modifier_run2_miniAOD_80XLegacy_cff import run2_miniAOD_80XLegacy
-    from Configuration.Eras.Modifier_run2_miniAOD_94XFall17_cff import run2_miniAOD_94XFall17
     from Configuration.ProcessModifiers.run2_miniAOD_UL_cff import run2_miniAOD_UL
-    _run2_miniAOD_ANY = (run2_miniAOD_80XLegacy | run2_miniAOD_94XFall17 | run2_miniAOD_UL)
+    _run2_miniAOD_ANY = (run2_miniAOD_UL)
     from Configuration.Eras.Modifier_pA_2016_cff import pA_2016
-    from Configuration.Eras.Modifier_run3_miniAOD_12X_cff import run3_miniAOD_12X
     if postfix=='':
       # Avoid recomputing the PUPPI collections that are present in AOD
       _rerun_puppijets_task = task.copy()
@@ -32,8 +29,8 @@ def applySubstructure( process, postfix="" ) :
                                 getattr(process,'ak8PFJetsPuppiConstituents'),
                                 getattr(process,'ak8PFJetsPuppiSoftDrop'),
                                 getattr(process,'ak8PFJetsPuppiSoftDropMass'))
-      (_run2_miniAOD_ANY | pA_2016 | run3_miniAOD_12X ).toReplaceWith(task, _rerun_puppijets_task)
-      (_run2_miniAOD_ANY | pA_2016 | run3_miniAOD_12X ).toModify(getattr(process,'ak8PFJetsPuppiConstituents'+postfix),
+      (_run2_miniAOD_ANY | pA_2016 ).toReplaceWith(task, _rerun_puppijets_task)
+      (_run2_miniAOD_ANY | pA_2016 ).toModify(getattr(process,'ak8PFJetsPuppiConstituents'+postfix),
         cut = cms.string('pt > 170.0 && abs(rapidity()) < 2.4'))
     else:
       task.add(getattr(process,'ak8PFJetsPuppi'+postfix),
@@ -66,7 +63,18 @@ def applySubstructure( process, postfix="" ) :
         jetCorrections = ('AK8PFPuppi', ['L2Relative', 'L3Absolute'], 'None'),
         getJetMCFlavour = False # jet flavor disabled
     )
+
     ## PATify soft drop subjets
+    from RecoBTag.ONNXRuntime.pfUnifiedParticleTransformerAK4_cff import _pfUnifiedParticleTransformerAK4JetTagsAll as pfUnifiedParticleTransformerAK4JetTagsAll
+    _btagDiscriminatorsSubjets = cms.PSet(
+      names=cms.vstring(
+        'pfDeepFlavourJetTags:probb',
+        'pfDeepFlavourJetTags:probbb',
+        'pfDeepFlavourJetTags:problepb',
+        'pfUnifiedParticleTransformerAK4DiscriminatorsJetTags:BvsAll'
+      )
+    )
+
     addJetCollection(
         process,
         postfix=postfix,
@@ -74,21 +82,13 @@ def applySubstructure( process, postfix="" ) :
         jetSource = cms.InputTag('ak8PFJetsPuppiSoftDrop'+postfix,'SubJets'),
         algo = 'ak',  # needed for subjet flavor clustering
         rParam = 0.8, # needed for subjet flavor clustering
-        btagDiscriminators = ['pfDeepCSVJetTags:probb', 'pfDeepCSVJetTags:probbb', 'pfCombinedInclusiveSecondaryVertexV2BJetTags','pfCombinedMVAV2BJetTags'],
+        btagDiscriminators = _btagDiscriminatorsSubjets.names.value(),
         jetCorrections = ('AK4PFPuppi', ['L2Relative', 'L3Absolute'], 'None'),
         explicitJTA = True,  # needed for subjet b tagging
         svClustering = True, # needed for subjet b tagging
         genJetCollection = cms.InputTag('slimmedGenJetsAK8SoftDropSubJets'), 
         fatJets=cms.InputTag('ak8PFJetsPuppi'),             # needed for subjet flavor clustering
         groomedFatJets=cms.InputTag('ak8PFJetsPuppiSoftDrop') # needed for subjet flavor clustering
-    )
-
-    from Configuration.Eras.Modifier_run3_common_cff import run3_common
-    run3_common.toModify(process.patJetsAK8PFPuppiSoftDropSubjets,
-                         discriminatorSources = cms.VInputTag(
-                            cms.InputTag("pfDeepCSVJetTagsAK8PFPuppiSoftDropSubjets","probb"),
-                            cms.InputTag("pfDeepCSVJetTagsAK8PFPuppiSoftDropSubjets","probbb")
-                         )
     )
 
     # add groomed ECFs and N-subjettiness to soft dropped pat::Jets for fat jets and subjets
@@ -124,31 +124,13 @@ def applySubstructure( process, postfix="" ) :
                      jetSource = cms.InputTag('ak8PFJetsPuppi'+postfix),
                      algo= 'AK', rParam = 0.8,
                      jetCorrections = ('AK8PFPuppi', cms.vstring(['L2Relative', 'L3Absolute']), 'None'),
-                     btagDiscriminators = ([
-                         'pfCombinedSecondaryVertexV2BJetTags',
-                         'pfCombinedInclusiveSecondaryVertexV2BJetTags',
-                         'pfCombinedMVAV2BJetTags',
-                         'pfDeepCSVJetTags:probb',
-                         'pfDeepCSVJetTags:probc',
-                         'pfDeepCSVJetTags:probudsg',
-                         'pfDeepCSVJetTags:probbb',
-                         'pfBoostedDoubleSecondaryVertexAK8BJetTags']),
+                     btagDiscriminators = None,
                      genJetCollection = cms.InputTag('slimmedGenJetsAK8')
                      )
     getattr(process,"patJetsAK8Puppi"+postfix).userData.userFloats.src = [] # start with empty list of user floats
     getattr(process,"selectedPatJetsAK8Puppi"+postfix).cut = cms.string("pt > 100")
     getattr(process,"selectedPatJetsAK8Puppi"+postfix).cutLoose = cms.string("pt > 30")
     getattr(process,"selectedPatJetsAK8Puppi"+postfix).nLoose = cms.uint32(3)
-
-    from Configuration.Eras.Modifier_run3_common_cff import run3_common
-    run3_common.toModify(process.patJetsAK8Puppi,
-                         discriminatorSources = cms.VInputTag(
-                            cms.InputTag("pfDeepCSVJetTagsAK8Puppi","probb"),
-                            cms.InputTag("pfDeepCSVJetTagsAK8Puppi","probc"),
-                            cms.InputTag("pfDeepCSVJetTagsAK8Puppi","probudsg"),
-                            cms.InputTag("pfDeepCSVJetTagsAK8Puppi","probbb")
-                         )
-    )
 
     from RecoJets.JetAssociationProducers.j2tParametersVX_cfi import j2tParametersVX
     addToProcessAndTask('ak8PFJetsPuppiTracksAssociatorAtVertex'+postfix, cms.EDProducer("JetTracksAssociatorAtVertex",

@@ -13,70 +13,78 @@
    the same Layout to access the data on host and print it.
  */
 
-#include <alpaka/alpaka.hpp>
+#include <cstdlib>
 #include <unistd.h>
-#include "DataFormats/VertexSoA/interface/alpaka/ZVertexSoACollection.h"
-#include "DataFormats/VertexSoA/interface/ZVertexDevice.h"
+
+#include <alpaka/alpaka.hpp>
+
 #include "DataFormats/VertexSoA/interface/ZVertexHost.h"
-#include "HeterogeneousCore/AlpakaInterface/interface/devices.h"
-#include "HeterogeneousCore/AlpakaInterface/interface/host.h"
-#include "HeterogeneousCore/AlpakaInterface/interface/memory.h"
+#include "DataFormats/VertexSoA/interface/alpaka/ZVertexSoACollection.h"
+#include "FWCore/Utilities/interface/stringize.h"
 #include "HeterogeneousCore/AlpakaInterface/interface/config.h"
+#include "HeterogeneousCore/AlpakaInterface/interface/devices.h"
+#include "HeterogeneousCore/AlpakaInterface/interface/memory.h"
 #include "HeterogeneousCore/AlpakaInterface/interface/workdivision.h"
 
-using namespace std;
-using namespace ALPAKA_ACCELERATOR_NAMESPACE;
-using namespace reco;
+#include "ZVertexSoA_test.h"
 
-namespace ALPAKA_ACCELERATOR_NAMESPACE {
-  namespace testZVertexSoAT {
-    void runKernels(ZVertexSoAView zvertex_view, Queue& queue);
-  }
-}  // namespace ALPAKA_ACCELERATOR_NAMESPACE
+using namespace ALPAKA_ACCELERATOR_NAMESPACE;
+
+// Run 3 values, used for testing
+constexpr uint32_t maxTracks = 32 * 1024;
+constexpr uint32_t maxVertices = 1024;
 
 int main() {
-  const auto host = cms::alpakatools::host();
-  const auto device = cms::alpakatools::devices<Platform>()[0];
-  Queue queue(device);
+  // Get the list of devices on the current platform
+  auto const& devices = cms::alpakatools::devices<Platform>();
+  if (devices.empty()) {
+    std::cerr << "No devices available for the " EDM_STRINGIZE(ALPAKA_ACCELERATOR_NAMESPACE) " backend, "
+      "the test will be skipped.\n";
+    exit(EXIT_FAILURE);
+  }
 
-  // Inner scope to deallocate memory before destroying the stream
-  {
-    // Instantiate vertices on device. PortableCollection allocates
-    // SoA on device automatically.
-    ZVertexSoACollection zvertex_d(queue);
-    testZVertexSoAT::runKernels(zvertex_d.view(), queue);
+  // Run the test on each device
+  for (const auto& device : devices) {
+    Queue queue(device);
 
-    // Instantate vertices on host. This is where the data will be
-    // copied to from device.
-    ZVertexHost zvertex_h(queue);
-    std::cout << zvertex_h.view().metadata().size() << std::endl;
-    alpaka::memcpy(queue, zvertex_h.buffer(), zvertex_d.const_buffer());
-    alpaka::wait(queue);
+    // Inner scope to deallocate memory before destroying the stream
+    {
+      // Instantiate vertices on device. PortableCollection allocates
+      // SoA on device automatically.
+      ZVertexSoACollection zvertex_d({{maxTracks, maxVertices}}, queue);
+      testZVertexSoAT::runKernels(zvertex_d.view(), zvertex_d.view<reco::ZVertexTracksSoA>(), queue);
 
-    // Print results
-    std::cout << "idv"
-              << "\t"
-              << "zv"
-              << "\t"
-              << "wv"
-              << "\t"
-              << "chi2"
-              << "\t"
-              << "ptv2"
-              << "\t"
-              << "ndof"
-              << "\t"
-              << "sortInd"
-              << "\t"
-              << "nvFinal" << std::endl;
+      // If the device is actually the host, use the collection as-is.
+      // Otherwise, copy the data from the device to the host.
+      ZVertexHost zvertex_h;
+#ifdef ALPAKA_ACC_CPU_B_SEQ_T_SEQ_ENABLED
+      zvertex_h = std::move(zvertex_d);
+#else
+      zvertex_h = cms::alpakatools::CopyToHost<ZVertexSoACollection>::copyAsync(queue, zvertex_d);
+#endif
+      alpaka::wait(queue);
+      std::cout << zvertex_h.view().metadata().size() << std::endl;
 
-    for (int i = 0; i < 10; ++i) {
-      std::cout << (int)zvertex_h.view()[i].idv() << "\t" << zvertex_h.view()[i].zv() << "\t"
-                << zvertex_h.view()[i].wv() << "\t" << zvertex_h.view()[i].chi2() << "\t" << zvertex_h.view()[i].ptv2()
-                << "\t" << (int)zvertex_h.view()[i].ndof() << "\t" << (int)zvertex_h.view()[i].sortInd() << "\t"
-                << (int)zvertex_h.view().nvFinal() << std::endl;
+      // Print results
+      std::cout << "idv\t"
+                << "zv\t"
+                << "wv\t"
+                << "chi2\t"
+                << "ptv2\t"
+                << "ndof\t"
+                << "sortInd\t"
+                << "nvFinal\n";
+
+      auto vtx_v = zvertex_h.view<reco::ZVertexSoA>();
+      auto trk_v = zvertex_h.view<reco::ZVertexTracksSoA>();
+      for (int i = 0; i < 10; ++i) {
+        auto vi = vtx_v[i];
+        auto ti = trk_v[i];
+        std::cout << (int)ti.idv() << "\t" << vi.zv() << "\t" << vi.wv() << "\t" << vi.chi2() << "\t" << vi.ptv2()
+                  << "\t" << (int)ti.ndof() << "\t" << vi.sortInd() << "\t" << (int)vtx_v.nvFinal() << std::endl;
+      }
     }
   }
 
-  return 0;
+  return EXIT_SUCCESS;
 }

@@ -51,6 +51,7 @@
 
 #include "DataFormats/L1CaloTrigger/interface/L1CaloCollections.h"
 #include "DataFormats/L1CaloTrigger/interface/L1CaloRegion.h"
+#include "DataFormats/L1CaloTrigger/interface/CICADA.h"
 
 #include "DataFormats/Math/interface/LorentzVector.h"
 
@@ -106,6 +107,7 @@ private:
   int fwVersion;
 
   edm::EDGetTokenT<L1CaloRegionCollection> regionToken;
+  edm::EDGetTokenT<L1CaloRegionCollection> backupRegionToken;
 
   UCTLayer1* layer1;
 
@@ -140,7 +142,8 @@ L1TCaloSummary<INPUT, OUTPUT>::L1TCaloSummary(const edm::ParameterSet& iConfig)
       boostedJetPtFactor(iConfig.getParameter<double>("boostedJetPtFactor")),
       verbose(iConfig.getParameter<bool>("verbose")),
       fwVersion(iConfig.getParameter<int>("firmwareVersion")),
-      regionToken(consumes<L1CaloRegionCollection>(edm::InputTag("simCaloStage2Layer1Digis"))),
+      regionToken(consumes<L1CaloRegionCollection>(iConfig.getParameter<edm::InputTag>("caloLayer1Regions"))),
+      backupRegionToken(consumes<L1CaloRegionCollection>(edm::InputTag("simCaloStage2Layer1Digis"))),
       loader(hls4mlEmulator::ModelLoader(iConfig.getParameter<string>("CICADAModelVersion"))),
       overwriteWithTestPatterns(iConfig.getParameter<bool>("useTestPatterns")),
       testPatterns(iConfig.getParameter<std::vector<edm::ParameterSet>>("testPatterns")) {
@@ -166,7 +169,7 @@ L1TCaloSummary<INPUT, OUTPUT>::L1TCaloSummary(const edm::ParameterSet& iConfig)
 
   //anomaly trigger loading
   model = loader.load_model();
-  produces<float>("CICADAScore");
+  produces<l1t::CICADABxCollection>("CICADAScore");
 }
 
 //
@@ -180,7 +183,8 @@ void L1TCaloSummary<INPUT, OUTPUT>::produce(edm::Event& iEvent, const edm::Event
 
   std::unique_ptr<L1JetParticleCollection> bJetCands(new L1JetParticleCollection);
 
-  std::unique_ptr<float> CICADAScore = std::make_unique<float>();
+  std::unique_ptr<l1t::CICADABxCollection> CICADAScore = std::make_unique<l1t::CICADABxCollection>();
+  CICADAScore->setBXRange(-2, 2);
 
   UCTGeometry g;
 
@@ -196,6 +200,12 @@ void L1TCaloSummary<INPUT, OUTPUT>::produce(edm::Event& iEvent, const edm::Event
   if (!iEvent.getByToken(regionToken, regionCollection))
     edm::LogError("L1TCaloSummary") << "UCT: Failed to get regions from region collection!";
   iEvent.getByToken(regionToken, regionCollection);
+
+  if (regionCollection->size() == 0) {
+    iEvent.getByToken(backupRegionToken, regionCollection);
+    edm::LogWarning("L1TCaloSummary") << "Switched to emulated regions since data regions was empty.\n";
+  }
+
   //Model input
   //This is done as a flat vector input, but future versions may involve 2D input
   //This will have to be handled later
@@ -254,10 +264,10 @@ void L1TCaloSummary<INPUT, OUTPUT>::produce(edm::Event& iEvent, const edm::Event
   model->predict();
   model->read_result(modelResult);
 
-  *CICADAScore = modelResult[0].to_float();
+  CICADAScore->push_back(0, modelResult[0].to_float());
 
   if (overwriteWithTestPatterns)
-    edm::LogInfo("L1TCaloSummary") << "Test Pattern Output: " << *CICADAScore;
+    edm::LogInfo("L1TCaloSummary") << "Test Pattern Output: " << CICADAScore->at(0, 0);
 
   summaryCard.setRegionData(inputRegions);
 
@@ -336,8 +346,19 @@ void L1TCaloSummary<INPUT, OUTPUT>::fillDescriptions(edm::ConfigurationDescripti
   descriptions.addDefault(desc);
 }
 
-typedef L1TCaloSummary<ap_ufixed<10, 10>, ap_fixed<11, 5>> L1TCaloSummaryCICADAv1;
-typedef L1TCaloSummary<ap_uint<10>, ap_ufixed<16, 8>> L1TCaloSummaryCICADAv2;
-//define type version plugins
-DEFINE_FWK_MODULE(L1TCaloSummaryCICADAv1);
-DEFINE_FWK_MODULE(L1TCaloSummaryCICADAv2);
+// Initial version, X.0.0, input/output typing
+typedef L1TCaloSummary<ap_ufixed<10, 10>, ap_fixed<11, 5>> L1TCaloSummary_CICADA_v1p0p0;
+typedef L1TCaloSummary<ap_uint<10>, ap_ufixed<16, 8>> L1TCaloSummary_CICADA_v2p0p0;
+DEFINE_FWK_MODULE(L1TCaloSummary_CICADA_v1p0p0);
+DEFINE_FWK_MODULE(L1TCaloSummary_CICADA_v2p0p0);
+// X.1.0 version input.output typing
+typedef L1TCaloSummary<ap_ufixed<10, 10>, ap_fixed<11, 5>> L1TCaloSummary_CICADA_v1p1p0;
+typedef L1TCaloSummary<ap_uint<10>, ap_ufixed<16, 8>> L1TCaloSummary_CICADA_v2p1p0;
+DEFINE_FWK_MODULE(L1TCaloSummary_CICADA_v1p1p0);
+DEFINE_FWK_MODULE(L1TCaloSummary_CICADA_v2p1p0);
+// X.1.1 version input/output typing
+typedef L1TCaloSummary<ap_uint<10>, ap_ufixed<16, 8, AP_RND, AP_SAT, AP_SAT>> L1TCaloSummary_CICADA_vXp1p1;
+DEFINE_FWK_MODULE(L1TCaloSummary_CICADA_vXp1p1);
+// X.1.2 version input/output typing
+typedef L1TCaloSummary<ap_uint<10>, ap_ufixed<16, 8, AP_RND_CONV, AP_SAT>> L1TCaloSummary_CICADA_vXp1p2;
+DEFINE_FWK_MODULE(L1TCaloSummary_CICADA_vXp1p2);

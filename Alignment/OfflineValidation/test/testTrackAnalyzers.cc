@@ -161,3 +161,21 @@ TEST_CASE("TrackerGeometryCompare tests", "[TrackerGeometryCompare]") {
   const std::string baseConfig = generateBaseConfig("trackerGeometryCompare", "tesTrackAnalyzer16.root");
   runTestForAnalyzer(baseConfig, "trackerGeometryCompare");
 }
+
+//___________________________________________________________________________________________
+TEST_CASE("ShortenedTrackValidation tests", "[ShortenedTrackValidation]") {
+  const std::string baseConfig = generateBaseConfig("shortenedTrackValidation", "tesTrackAnalyzer17.root");
+  runTestForAnalyzer(baseConfig, "shortenedTrackValidation");
+}
+
+//___________________________________________________________________________________________
+TEST_CASE("SagittaBiasNtuplizer tests", "[SagittaBiasNtuplizer]") {
+  const std::string baseConfig = generateBaseConfig("sagittaBiasNtuplizer", "tesTrackAnalyzer18.root");
+  runTestForAnalyzer(baseConfig, "sagittaBiasNtuplizer");
+}
+
+//___________________________________________________________________________________________
+TEST_CASE("TkAlV0sAnalyzer tests", "[TkAlV0sAnalyzer]") {
+  const std::string baseConfig = generateBaseConfig("tkAlV0sAnalyzer", "tesTrackAnalyzer19.root");
+  runTestForAnalyzer(baseConfig, "tkAlV0sAnalyzer");
+}

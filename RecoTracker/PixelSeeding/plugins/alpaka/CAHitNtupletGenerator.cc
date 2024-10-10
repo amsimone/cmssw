@@ -1,7 +1,3 @@
-//
-// Original Author: Felice Pantaleo, CERN
-//
-
 //#define GPU_DEBUG
 //#define DUMP_GPU_TK_TUPLES
 
@@ -10,12 +6,15 @@
 #include <functional>
 #include <vector>
 
-#include "DataFormats/TrackSoA/interface/alpaka/TracksSoACollection.h"
+#include <alpaka/alpaka.hpp>
+
 #include "DataFormats/TrackSoA/interface/TracksDevice.h"
 #include "DataFormats/TrackSoA/interface/TracksHost.h"
+#include "DataFormats/TrackSoA/interface/alpaka/TracksSoACollection.h"
 #include "FWCore/ParameterSet/interface/ParameterSet.h"
 #include "FWCore/ParameterSet/interface/ParameterSetDescription.h"
 #include "FWCore/Utilities/interface/Exception.h"
+#include "HeterogeneousCore/AlpakaInterface/interface/config.h"
 
 #include "CAHitNtupletGenerator.h"
 #include "CAHitNtupletGeneratorKernels.h"
@@ -300,10 +299,17 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
 
     TrackSoA tracks(queue);
 
-    GPUKernels kernels(m_params, hits_d.view().metadata().size(), queue);
+    // Don't bother if less than 2 this
+    if (hits_d.view().metadata().size() < 2) {
+      const auto device = alpaka::getDev(queue);
+      auto ntracks_d = cms::alpakatools::make_device_view(device, tracks.view().nTracks());
+      alpaka::memset(queue, ntracks_d, 0);
+      return tracks;
+    }
+    GPUKernels kernels(m_params, hits_d.view().metadata().size(), hits_d.offsetBPIX2(), queue);
 
-    kernels.buildDoublets(hits_d.view(), queue);
-    kernels.launchKernels(hits_d.view(), tracks.view(), queue);
+    kernels.buildDoublets(hits_d.view(), hits_d.offsetBPIX2(), queue);
+    kernels.launchKernels(hits_d.view(), hits_d.offsetBPIX2(), tracks.view(), queue);
 
     HelixFit fitter(bfield, m_params.fitNas4_);
     fitter.allocate(kernels.tupleMultiplicity(), tracks.view());

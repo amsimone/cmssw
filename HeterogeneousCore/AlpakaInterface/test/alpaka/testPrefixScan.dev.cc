@@ -1,9 +1,13 @@
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <iostream>
 #include <limits>
 #include <random>
 
+#include <alpaka/alpaka.hpp>
+
+#include "FWCore/Utilities/interface/stringize.h"
 #include "HeterogeneousCore/AlpakaInterface/interface/config.h"
 #include "HeterogeneousCore/AlpakaInterface/interface/memory.h"
 #include "HeterogeneousCore/AlpakaInterface/interface/workdivision.h"
@@ -34,7 +38,7 @@ struct testPrefixScan {
     auto& c = alpaka::declareSharedVar<T[1024], __COUNTER__>(acc);
     auto& co = alpaka::declareSharedVar<T[1024], __COUNTER__>(acc);
 
-    for (auto i : elements_with_stride(acc, size)) {
+    for (auto i : uniform_elements(acc, size)) {
       c[i] = 1;
     };
 
@@ -43,13 +47,13 @@ struct testPrefixScan {
     blockPrefixScan(acc, c, co, size, ws);
     blockPrefixScan(acc, c, size, ws);
 
-    ALPAKA_ASSERT_OFFLOAD(1 == c[0]);
-    ALPAKA_ASSERT_OFFLOAD(1 == co[0]);
+    ALPAKA_ASSERT_ACC(1 == c[0]);
+    ALPAKA_ASSERT_ACC(1 == co[0]);
 
     // TODO: not needed? Not in multi kernel version, not in CUDA version
     alpaka::syncBlockThreads(acc);
 
-    for (auto i : elements_with_stride(acc, size)) {
+    for (auto i : uniform_elements(acc, size)) {
       if (0 == i)
         continue;
       if constexpr (!std::is_floating_point_v<T>) {
@@ -59,9 +63,9 @@ struct testPrefixScan {
         if (!((c[i] == c[i - 1] + 1) && (c[i] == i + 1) && (c[i] == co[i])))
           printf("c[%d]=%f, co[%d]=%f\n", i, c[i], i, co[i]);
       }
-      ALPAKA_ASSERT_OFFLOAD(c[i] == c[i - 1] + 1);
-      ALPAKA_ASSERT_OFFLOAD(c[i] == i + 1);
-      ALPAKA_ASSERT_OFFLOAD(c[i] == co[i]);
+      ALPAKA_ASSERT_ACC(c[i] == c[i - 1] + 1);
+      ALPAKA_ASSERT_ACC(c[i] == i + 1);
+      ALPAKA_ASSERT_ACC(c[i] == co[i]);
     }
   }
 };
@@ -74,7 +78,7 @@ struct testWarpPrefixScan {
   template <typename TAcc>
   ALPAKA_FN_ACC void operator()(const TAcc& acc, uint32_t size) const {
     if constexpr (!requires_single_thread_per_block_v<TAcc>) {
-      ALPAKA_ASSERT_OFFLOAD(size <= 32);
+      ALPAKA_ASSERT_ACC(size <= 32);
       auto& c = alpaka::declareSharedVar<T[1024], __COUNTER__>(acc);
       auto& co = alpaka::declareSharedVar<T[1024], __COUNTER__>(acc);
 
@@ -90,18 +94,18 @@ struct testWarpPrefixScan {
 
       alpaka::syncBlockThreads(acc);
 
-      ALPAKA_ASSERT_OFFLOAD(1 == c[0]);
-      ALPAKA_ASSERT_OFFLOAD(1 == co[0]);
+      ALPAKA_ASSERT_ACC(1 == c[0]);
+      ALPAKA_ASSERT_ACC(1 == co[0]);
       if (i != 0) {
         if (c[i] != c[i - 1] + 1)
           printf(format_traits<T>::failed_msg, size, i, blockDimension, c[i], c[i - 1]);
-        ALPAKA_ASSERT_OFFLOAD(c[i] == c[i - 1] + 1);
-        ALPAKA_ASSERT_OFFLOAD(c[i] == static_cast<T>(i + 1));
-        ALPAKA_ASSERT_OFFLOAD(c[i] == co[i]);
+        ALPAKA_ASSERT_ACC(c[i] == c[i - 1] + 1);
+        ALPAKA_ASSERT_ACC(c[i] == static_cast<T>(i + 1));
+        ALPAKA_ASSERT_ACC(c[i] == co[i]);
       }
     } else {
       // We should never be called outsie of the GPU.
-      ALPAKA_ASSERT_OFFLOAD(false);
+      ALPAKA_ASSERT_ACC(false);
     }
   }
 };
@@ -109,7 +113,7 @@ struct testWarpPrefixScan {
 struct init {
   template <typename TAcc>
   ALPAKA_FN_ACC void operator()(const TAcc& acc, uint32_t* v, uint32_t val, uint32_t n) const {
-    for (auto index : elements_with_stride(acc, n)) {
+    for (auto index : uniform_elements(acc, n)) {
       v[index] = val;
 
       if (index == 0)
@@ -121,8 +125,8 @@ struct init {
 struct verify {
   template <typename TAcc>
   ALPAKA_FN_ACC void operator()(const TAcc& acc, uint32_t const* v, uint32_t n) const {
-    for (auto index : elements_with_stride(acc, n)) {
-      ALPAKA_ASSERT_OFFLOAD(v[index] == index + 1);
+    for (auto index : uniform_elements(acc, n)) {
+      ALPAKA_ASSERT_ACC(v[index] == index + 1);
 
       if (index == 0)
         printf("verify\n");
@@ -133,18 +137,17 @@ struct verify {
 int main() {
   // get the list of devices on the current platform
   auto const& devices = cms::alpakatools::devices<Platform>();
-  // auto const& host = cms::alpakatools::host();
 
   if (devices.empty()) {
-    std::cout << "No devices available on the platform " << EDM_STRINGIZE(ALPAKA_ACCELERATOR_NAMESPACE)
-              << ", the test will be skipped.\n";
-    return 0;
+    std::cerr << "No devices available for the " EDM_STRINGIZE(ALPAKA_ACCELERATOR_NAMESPACE) " backend, "
+      "the test will be skipped.\n";
+    exit(EXIT_FAILURE);
   }
 
   for (auto const& device : devices) {
     std::cout << "Test prefix scan on " << alpaka::getName(device) << '\n';
     auto queue = Queue(device);
-    const auto warpSize = alpaka::getWarpSizes(device)[0];
+    const auto warpSize = alpaka::getPreferredWarpSize(device);
     // WARP PREFIXSCAN (OBVIOUSLY GPU-ONLY)
     if constexpr (!requires_single_thread_per_block_v<Acc1D>) {
       std::cout << "warp level" << std::endl;
@@ -212,7 +215,7 @@ int main() {
       alpaka::enqueue(queue, alpaka::createTaskKernel<Acc1D>(workDivMultiBlock, verify(), output1_d.data(), num_items));
 
       alpaka::wait(queue);  // input_d and output1_d end of scope
-    }                       // ksize
+    }  // ksize
   }
 
   return 0;

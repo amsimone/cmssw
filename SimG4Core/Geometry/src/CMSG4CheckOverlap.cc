@@ -19,7 +19,7 @@
 #include "G4MaterialTable.hh"
 #include "G4ProductionCutsTable.hh"
 #include "G4MaterialCutsCouple.hh"
-#include "G4SystemOfUnits.hh"
+#include <CLHEP/Units/SystemOfUnits.h>
 #include "G4VPhysicalVolume.hh"
 #include "G4UnitsTable.hh"
 #include "G4ios.hh"
@@ -210,7 +210,7 @@ void CMSG4CheckOverlap::makeReportForOverlaps(std::ofstream& fout,
   fout << "====================================================================="
        << "\n";
   fout << "CMSG4OverlapCheck is initialised with " << nodeNames.size() << " nodes; "
-       << " nPoints= " << nPoints << "; tolerance= " << tolerance / mm << " mm; verbose: " << verbose << "\n"
+       << " nPoints= " << nPoints << "; tolerance= " << tolerance / CLHEP::mm << " mm; verbose: " << verbose << "\n"
        << "               RegionFlag: " << regionFlag << "  PVname: " << PVname << "  LVname: " << LVname << "\n"
        << "               Nlv= " << numLV << "   Npv= " << numPV << "\n";
   fout << "====================================================================="
@@ -237,11 +237,6 @@ void CMSG4CheckOverlap::makeReportForOverlaps(std::ofstream& fout,
              << "\n";
         fout << "### Check overlaps for G4Region Node[" << ii << "] : " << nodeNames[ii] << "\n";
         G4Region* reg = regStore->GetRegion((G4String)nodeNames[ii]);
-        if (!reg) {
-          fout << "### NO G4Region found - EXIT"
-               << "\n";
-          return;
-        }
         std::vector<G4LogicalVolume*>::iterator rootLVItr = reg->GetRootLogicalVolumeIterator();
         unsigned int numRootLV = reg->GetNumberOfRootVolumes();
         fout << "      " << numRootLV << " Root Logical Volumes in this region"

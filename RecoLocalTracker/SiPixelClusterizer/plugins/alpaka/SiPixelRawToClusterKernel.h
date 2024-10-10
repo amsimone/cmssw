@@ -29,6 +29,7 @@ namespace pixelDetails {
   constexpr auto MAX_LINK = pixelgpudetails::MAX_LINK;
   constexpr auto MAX_SIZE = pixelgpudetails::MAX_SIZE;
   constexpr auto MAX_ROC = pixelgpudetails::MAX_ROC;
+
   // Phase 1 geometry constants
   constexpr uint32_t layerStartBit = 20;
   constexpr uint32_t ladderStartBit = 12;
@@ -85,7 +86,7 @@ namespace pixelDetails {
   constexpr uint32_t OMIT_ERR_mask = ~(~uint32_t(0) << OMIT_ERR_bits);
 
   struct DetIdGPU {
-    uint32_t RawId;
+    uint32_t rawId;
     uint32_t rocInDet;
     uint32_t moduleId;
   };
@@ -121,12 +122,9 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
 
     class WordFedAppender {
     public:
-      WordFedAppender();
-      ~WordFedAppender() = default;
-
-      WordFedAppender(uint32_t words)
-          : word_{cms::alpakatools::make_host_buffer<unsigned int[], Platform>(words)},
-            fedId_{cms::alpakatools::make_host_buffer<unsigned char[], Platform>(words)} {};
+      WordFedAppender(Queue& queue, uint32_t words)
+          : word_{cms::alpakatools::make_host_buffer<unsigned int[]>(queue, words)},
+            fedId_{cms::alpakatools::make_host_buffer<unsigned char[]>(queue, words)} {};
 
       void initializeWordFed(int fedId, unsigned int wordCounterGPU, const uint32_t* src, unsigned int length) {
         std::memcpy(word_.data() + wordCounterGPU, src, sizeof(uint32_t) * length);
@@ -170,7 +168,7 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
                                    const uint32_t numDigis);
 
       SiPixelDigisSoACollection getDigis() {
-        digis_d->setNModulesDigis(nModules_Clusters_h[0], nDigis);
+        digis_d->setNModules(nModules_Clusters_h[0]);
         return std::move(*digis_d);
       }
 

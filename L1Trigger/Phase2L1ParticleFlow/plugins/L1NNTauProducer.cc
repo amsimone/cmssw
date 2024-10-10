@@ -26,7 +26,7 @@ public:
 
   static void fillDescriptions(edm::ConfigurationDescriptions& descriptions);
   static std::unique_ptr<tensorflow::SessionCache> initializeGlobalCache(const edm::ParameterSet&);
-  static void globalEndJob(const tensorflow::SessionCache*){};
+  static void globalEndJob(const tensorflow::SessionCache*) {}
 
 private:
   // There is te software and hardware emulator for the tau, default is the Hardware.
@@ -81,7 +81,6 @@ L1NNTauProducer::L1NNTauProducer(const edm::ParameterSet& cfg, const tensorflow:
 }
 
 std::unique_ptr<tensorflow::SessionCache> L1NNTauProducer::initializeGlobalCache(const edm::ParameterSet& cfg) {
-  tensorflow::setLogging("3");
   std::string graphPath = edm::FileInPath(cfg.getParameter<std::string>("NNFileName")).fullPath();
   return std::make_unique<tensorflow::SessionCache>(graphPath);
 }
@@ -97,10 +96,6 @@ void L1NNTauProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup)
     process_SW(*l1PFCandidates, lTaus);
   }
 
-  if (lTaus->empty()) {
-    PFTau dummy;
-    lTaus->push_back(dummy);
-  }
   std::sort(lTaus->begin(), lTaus->end(), [](l1t::PFTau i, l1t::PFTau j) { return (i.pt() > j.pt()); });
   iEvent.put(std::move(lTaus), "L1PFTausNN");
 }

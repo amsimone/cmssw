@@ -1,10 +1,14 @@
 #include <algorithm>
 #include <array>
+#include <cstdlib>
 #include <iostream>
 #include <limits>
 #include <memory>
 #include <random>
 
+#include <alpaka/alpaka.hpp>
+
+#include "FWCore/Utilities/interface/stringize.h"
 #include "HeterogeneousCore/AlpakaInterface/interface/config.h"
 #include "HeterogeneousCore/AlpakaInterface/interface/memory.h"
 #include "HeterogeneousCore/AlpakaInterface/interface/workdivision.h"
@@ -36,7 +40,7 @@ struct countMultiLocal {
                                 TK const* __restrict__ tk,
                                 Multiplicity* __restrict__ assoc,
                                 uint32_t n) const {
-    for (auto i : elements_with_stride(acc, n)) {
+    for (auto i : uniform_elements(acc, n)) {
       auto& local = alpaka::declareSharedVar<Multiplicity::CountersOnly, __COUNTER__>(acc);
       const uint32_t threadIdxLocal(alpaka::getIdx<alpaka::Block, alpaka::Threads>(acc)[0u]);
       const bool oncePerSharedMemoryAccess = (threadIdxLocal == 0);
@@ -59,7 +63,7 @@ struct countMulti {
                                 TK const* __restrict__ tk,
                                 Multiplicity* __restrict__ assoc,
                                 uint32_t n) const {
-    for (auto i : elements_with_stride(acc, n)) {
+    for (auto i : uniform_elements(acc, n)) {
       assoc->count(acc, 2 + i % 4);
     }
   }
@@ -68,8 +72,8 @@ struct countMulti {
 struct verifyMulti {
   template <typename TAcc>
   ALPAKA_FN_ACC void operator()(const TAcc& acc, Multiplicity* __restrict__ m1, Multiplicity* __restrict__ m2) const {
-    for ([[maybe_unused]] auto i : elements_with_stride(acc, Multiplicity{}.totOnes())) {
-      ALPAKA_ASSERT_OFFLOAD(m1->off[i] == m2->off[i]);
+    for ([[maybe_unused]] auto i : uniform_elements(acc, Multiplicity{}.totOnes())) {
+      ALPAKA_ASSERT_ACC(m1->off[i] == m2->off[i]);
     }
   }
 };
@@ -80,10 +84,10 @@ struct count {
                                 TK const* __restrict__ tk,
                                 AssocRandomAccess* __restrict__ assoc,
                                 uint32_t n) const {
-    for (auto i : elements_with_stride(acc, 4 * n)) {
+    for (auto i : uniform_elements(acc, 4 * n)) {
       auto k = i / 4;
       auto j = i - 4 * k;
-      ALPAKA_ASSERT_OFFLOAD(j < 4);
+      ALPAKA_ASSERT_ACC(j < 4);
       if (k >= n) {
         return;
       }
@@ -100,10 +104,10 @@ struct fill {
                                 TK const* __restrict__ tk,
                                 AssocRandomAccess* __restrict__ assoc,
                                 uint32_t n) const {
-    for (auto i : elements_with_stride(acc, 4 * n)) {
+    for (auto i : uniform_elements(acc, 4 * n)) {
       auto k = i / 4;
       auto j = i - 4 * k;
-      ALPAKA_ASSERT_OFFLOAD(j < 4);
+      ALPAKA_ASSERT_ACC(j < 4);
       if (k >= n) {
         return;
       }
@@ -117,7 +121,7 @@ struct fill {
 struct verify {
   template <typename TAcc, typename Assoc>
   ALPAKA_FN_ACC void operator()(const TAcc& acc, Assoc* __restrict__ assoc) const {
-    ALPAKA_ASSERT_OFFLOAD(assoc->size() < Assoc{}.capacity());
+    ALPAKA_ASSERT_ACC(assoc->size() < Assoc{}.capacity());
   }
 };
 
@@ -125,7 +129,7 @@ struct fillBulk {
   template <typename TAcc, typename Assoc>
   ALPAKA_FN_ACC void operator()(
       const TAcc& acc, AtomicPairCounter* apc, TK const* __restrict__ tk, Assoc* __restrict__ assoc, uint32_t n) const {
-    for (auto k : elements_with_stride(acc, n)) {
+    for (auto k : uniform_elements(acc, n)) {
       auto m = tk[k][3] < MaxElem ? 4 : 3;
       assoc->bulkFill(acc, *apc, &tk[k][0], m);
     }
@@ -138,7 +142,7 @@ struct verifyBulk {
     if (::toSigned(apc->get().first) >= Assoc::ctNOnes()) {
       printf("Overflow %d %d\n", apc->get().first, Assoc::ctNOnes());
     }
-    ALPAKA_ASSERT_OFFLOAD(toSigned(assoc->size()) < Assoc::ctCapacity());
+    ALPAKA_ASSERT_ACC(toSigned(assoc->size()) < Assoc::ctCapacity());
   }
 };
 
@@ -146,9 +150,9 @@ int main() {
   // get the list of devices on the current platform
   auto const& devices = cms::alpakatools::devices<Platform>();
   if (devices.empty()) {
-    std::cout << "No devices available on the platform " << EDM_STRINGIZE(ALPAKA_ACCELERATOR_NAMESPACE)
-              << ", the test will be skipped.\n";
-    return 0;
+    std::cerr << "No devices available for the " EDM_STRINGIZE(ALPAKA_ACCELERATOR_NAMESPACE) " backend, "
+      "the test will be skipped.\n";
+    exit(EXIT_FAILURE);
   }
 
   // run the test on each device
@@ -197,8 +201,8 @@ int main() {
         }
         ++z;
       }
-      ALPAKA_ASSERT_OFFLOAD(n <= MaxElem);
-      ALPAKA_ASSERT_OFFLOAD(j <= N);
+      ALPAKA_ASSERT_ACC(n <= MaxElem);
+      ALPAKA_ASSERT_ACC(j <= N);
     }
     std::cout << "filled with " << n << " elements " << double(ave) / n << ' ' << imax << ' ' << nz << std::endl;
 
@@ -239,7 +243,7 @@ int main() {
       ave += x;
       imax = std::max(imax, int(x));
     }
-    ALPAKA_ASSERT_OFFLOAD(0 == ara_h->size(n));
+    ALPAKA_ASSERT_ACC(0 == ara_h->size(n));
     std::cout << "found with " << n << " elements " << double(ave) / n << ' ' << imax << ' ' << z << std::endl;
 
     // now the inverse map (actually this is the direct....)
@@ -289,11 +293,11 @@ int main() {
       if (!(x == 4 || x == 3)) {
         std::cout << "i=" << i << " x=" << x << std::endl;
       }
-      ALPAKA_ASSERT_OFFLOAD(x == 4 || x == 3);
+      ALPAKA_ASSERT_ACC(x == 4 || x == 3);
       ave += x;
       imax = std::max(imax, int(x));
     }
-    ALPAKA_ASSERT_OFFLOAD(0 == as_h->size(N));
+    ALPAKA_ASSERT_ACC(0 == as_h->size(N));
     std::cout << "found with ave occupancy " << double(ave) / N << ' ' << imax << std::endl;
 
     // here verify use of block local counters

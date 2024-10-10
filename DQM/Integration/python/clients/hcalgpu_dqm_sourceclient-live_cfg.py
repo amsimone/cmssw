@@ -100,16 +100,16 @@ cmssw			= os.getenv("CMSSW_VERSION").split("_")
 #	New Style
 #-------------------------------------
 process.load('DQM.HcalTasks.hcalGPUComparisonTask_cfi')
-process.load('DQM.HcalTasks.HcalOnlineHarvesting')
-process.load('DQM.HcalTasks.HcalQualityTests')
+process.load('DQM.HcalTasks.HcalOnlineHarvesting_cfi')
+process.load('DQM.HcalTasks.HcalQualityTests_cfi')
 
 #-------------------------------------
 #	Some Settings before Finishing up
 #	New Style Modules
 #-------------------------------------
 oldsubsystem = subsystem
-process.hcalGPUComparisonTask.tagHBHE_ref = "hltHbherecoLegacy"
-process.hcalGPUComparisonTask.tagHBHE_target = "hltHbherecoFromGPU"
+process.hcalGPUComparisonTask.tagHBHE_ref = "hltHbherecoSerialSync"
+process.hcalGPUComparisonTask.tagHBHE_target = "hltHbhereco"
 process.hcalGPUComparisonTask.runkeyVal = runType
 process.hcalGPUComparisonTask.runkeyName = runTypeName
 

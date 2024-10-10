@@ -1,21 +1,22 @@
-#ifndef RecoPixelVertexing_PixelTriplets_CACellT_h
-#define RecoPixelVertexing_PixelTriplets_CACellT_h
-
-//
-// Author: Felice Pantaleo, CERN
-//
+#ifndef RecoTracker_PixelSeeding_plugins_alpaka_CACell_h
+#define RecoTracker_PixelSeeding_plugins_alpaka_CACell_h
 
 // #define ONLY_TRIPLETS_IN_HOLE
 
+#include <cmath>
+#include <limits>
+
 #include <alpaka/alpaka.hpp>
 
-#include "DataFormats/TrackingRecHitSoA/interface/TrackingRecHitsSoA.h"
-#include "HeterogeneousCore/AlpakaInterface/interface/VecArray.h"
-#include "HeterogeneousCore/AlpakaInterface/interface/SimpleVector.h"
-#include "RecoTracker/PixelSeeding/interface/CircleEq.h"
 #include "DataFormats/TrackSoA/interface/TrackDefinitions.h"
 #include "DataFormats/TrackSoA/interface/TracksSoA.h"
+#include "DataFormats/TrackingRecHitSoA/interface/TrackingRecHitsSoA.h"
 #include "Geometry/CommonTopologies/interface/SimplePixelTopology.h"
+#include "HeterogeneousCore/AlpakaInterface/interface/SimpleVector.h"
+#include "HeterogeneousCore/AlpakaInterface/interface/VecArray.h"
+#include "HeterogeneousCore/AlpakaInterface/interface/config.h"
+#include "RecoTracker/PixelSeeding/interface/CircleEq.h"
+
 #include "CAStructures.h"
 
 namespace ALPAKA_ACCELERATOR_NAMESPACE {
@@ -66,8 +67,8 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
       // link to default empty
       theOuterNeighbors = &cellNeighbors[0];
       theTracks = &cellTracks[0];
-      assert(outerNeighbors().empty());
-      assert(tracks().empty());
+      ALPAKA_ASSERT_ACC(outerNeighbors().empty());
+      ALPAKA_ASSERT_ACC(tracks().empty());
     }
 
     template <typename TAcc>
@@ -300,11 +301,11 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
 
       if constexpr (DEPTH <= 0) {
         printf("ERROR: CACellT::find_ntuplets reached full depth!\n");
-        ALPAKA_ASSERT_OFFLOAD(false);
+        ALPAKA_ASSERT_ACC(false);
       } else {
         auto doubletId = this - cells;
         tmpNtuplet.push_back_unsafe(doubletId);
-        ALPAKA_ASSERT_OFFLOAD(tmpNtuplet.size() <= int(TrackerTraits::maxHitsOnTrack - 3));
+        ALPAKA_ASSERT_ACC(tmpNtuplet.size() <= int(TrackerTraits::maxHitsOnTrack - 3));
 
         bool last = true;
         for (unsigned int otherCell : outerNeighbors()) {
@@ -333,7 +334,7 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
                   hits[nh++] = cells[c].theFishboneId;  // Fishbone hit is always outer than inner hit
                 }
               }
-              assert(nh < TrackerTraits::maxHitsOnTrack);
+              ALPAKA_ASSERT_ACC(nh < TrackerTraits::maxHitsOnTrack);
               hits[nh] = theOuterHitId;
               auto it = foundNtuplets.bulkFill(acc, apc, hits, nh + 1);
               if (it >= 0) {  // if negative is overflow....
@@ -345,7 +346,7 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
           }
         }
         tmpNtuplet.pop_back();
-        assert(tmpNtuplet.size() < int(TrackerTraits::maxHitsOnTrack - 1));
+        ALPAKA_ASSERT_ACC(tmpNtuplet.size() < int(TrackerTraits::maxHitsOnTrack - 1));
       }
     }
 
@@ -387,5 +388,7 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
     hindex_type theOuterHitId;
     hindex_type theFishboneId;
   };
+
 }  // namespace ALPAKA_ACCELERATOR_NAMESPACE
-#endif  // RecoPixelVertexing_PixelTriplets_plugins_CACellT_h
+
+#endif  // RecoTracker_PixelSeeding_plugins_alpaka_CACell_h

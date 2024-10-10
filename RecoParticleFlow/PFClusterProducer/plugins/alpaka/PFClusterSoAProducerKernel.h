@@ -8,7 +8,6 @@
 #include "RecoParticleFlow/PFClusterProducer/interface/alpaka/PFClusterParamsDeviceCollection.h"
 #include "RecoParticleFlow/PFClusterProducer/interface/alpaka/PFClusteringVarsDeviceCollection.h"
 #include "RecoParticleFlow/PFClusterProducer/interface/alpaka/PFClusteringEdgeVarsDeviceCollection.h"
-#include "RecoParticleFlow/PFRecHitProducer/interface/PFRecHitTopologyRecord.h"
 #include "RecoParticleFlow/PFRecHitProducer/interface/alpaka/PFRecHitTopologyDeviceCollection.h"
 #include "HeterogeneousCore/AlpakaInterface/interface/config.h"
 
@@ -40,7 +39,16 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
   public:
     PFClusterProducerKernel(Queue& queue, const reco::PFRecHitHostCollection& pfRecHits);
 
-    void execute(Queue& queue,
+    void seedTopoAndContract(Queue& queue,
+                             const reco::PFClusterParamsDeviceCollection& params,
+                             const reco::PFRecHitHCALTopologyDeviceCollection& topology,
+                             reco::PFClusteringVarsDeviceCollection& pfClusteringVars,
+                             reco::PFClusteringEdgeVarsDeviceCollection& pfClusteringEdgeVars,
+                             const reco::PFRecHitHostCollection& pfRecHits,
+                             reco::PFClusterDeviceCollection& pfClusters,
+                             uint32_t* __restrict__ nRHF);
+
+    void cluster(Queue& queue,
                  const reco::PFClusterParamsDeviceCollection& params,
                  const reco::PFRecHitHCALTopologyDeviceCollection& topology,
                  reco::PFClusteringVarsDeviceCollection& pfClusteringVars,

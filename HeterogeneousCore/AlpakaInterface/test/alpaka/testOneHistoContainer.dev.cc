@@ -3,6 +3,9 @@
 #include <limits>
 #include <random>
 
+#include <alpaka/alpaka.hpp>
+
+#include "FWCore/Utilities/interface/stringize.h"
 #include "HeterogeneousCore/AlpakaInterface/interface/config.h"
 #include "HeterogeneousCore/AlpakaInterface/interface/memory.h"
 #include "HeterogeneousCore/AlpakaInterface/interface/workdivision.h"
@@ -15,8 +18,8 @@ template <int NBINS, int S, int DELTA>
 struct mykernel {
   template <typename TAcc, typename T>
   ALPAKA_FN_ACC void operator()(const TAcc& acc, T const* __restrict__ v, uint32_t N) const {
-    ALPAKA_ASSERT_OFFLOAD(v);
-    ALPAKA_ASSERT_OFFLOAD(N == 12000);
+    ALPAKA_ASSERT_ACC(v);
+    ALPAKA_ASSERT_ACC(N == 12000);
 
     const uint32_t threadIdxLocal(alpaka::getIdx<alpaka::Block, alpaka::Threads>(acc)[0u]);
     if (threadIdxLocal == 0) {
@@ -29,65 +32,65 @@ struct mykernel {
     auto& ws = alpaka::declareSharedVar<typename Hist::Counter[32], __COUNTER__>(acc);
 
     // set off zero
-    for (auto j : elements_with_stride(acc, Hist::totbins())) {
+    for (auto j : uniform_elements(acc, Hist::totbins())) {
       hist.off[j] = 0;
     }
     alpaka::syncBlockThreads(acc);
 
     // set bins zero
-    for (auto j : elements_with_stride(acc, Hist::totbins())) {
+    for (auto j : uniform_elements(acc, Hist::totbins())) {
       hist.content[j] = 0;
     }
     alpaka::syncBlockThreads(acc);
 
     // count
-    for (auto j : elements_with_stride(acc, N)) {
+    for (auto j : uniform_elements(acc, N)) {
       hist.count(acc, v[j]);
     }
     alpaka::syncBlockThreads(acc);
 
-    ALPAKA_ASSERT_OFFLOAD(0 == hist.size());
+    ALPAKA_ASSERT_ACC(0 == hist.size());
     alpaka::syncBlockThreads(acc);
 
     // finalize
     hist.finalize(acc, ws);
     alpaka::syncBlockThreads(acc);
 
-    ALPAKA_ASSERT_OFFLOAD(N == hist.size());
+    ALPAKA_ASSERT_ACC(N == hist.size());
 
     // verify
-    for ([[maybe_unused]] auto j : elements_with_stride(acc, Hist::nbins())) {
-      ALPAKA_ASSERT_OFFLOAD(hist.off[j] <= hist.off[j + 1]);
+    for ([[maybe_unused]] auto j : uniform_elements(acc, Hist::nbins())) {
+      ALPAKA_ASSERT_ACC(hist.off[j] <= hist.off[j + 1]);
     }
     alpaka::syncBlockThreads(acc);
 
-    for (auto j : elements_with_stride(acc, 32)) {
+    for (auto j : uniform_elements(acc, 32)) {
       ws[j] = 0;  // used by prefix scan...
     }
     alpaka::syncBlockThreads(acc);
 
     // fill
-    for (auto j : elements_with_stride(acc, N)) {
+    for (auto j : uniform_elements(acc, N)) {
       hist.fill(acc, v[j], j);
     }
     alpaka::syncBlockThreads(acc);
 
-    ALPAKA_ASSERT_OFFLOAD(0 == hist.off[0]);
-    ALPAKA_ASSERT_OFFLOAD(N == hist.size());
+    ALPAKA_ASSERT_ACC(0 == hist.off[0]);
+    ALPAKA_ASSERT_ACC(N == hist.size());
 
     // bin
 #ifndef NDEBUG
-    for (auto j : elements_with_stride(acc, hist.size() - 1)) {
+    for (auto j : uniform_elements(acc, hist.size() - 1)) {
       auto p = hist.begin() + j;
-      ALPAKA_ASSERT_OFFLOAD((*p) < N);
+      ALPAKA_ASSERT_ACC((*p) < N);
       [[maybe_unused]] auto k1 = Hist::bin(v[*p]);
       [[maybe_unused]] auto k2 = Hist::bin(v[*(p + 1)]);
-      ALPAKA_ASSERT_OFFLOAD(k2 >= k1);
+      ALPAKA_ASSERT_ACC(k2 >= k1);
     }
 #endif
 
     // forEachInWindow
-    for (auto i : elements_with_stride(acc, hist.size())) {
+    for (auto i : uniform_elements(acc, hist.size())) {
       auto p = hist.begin() + i;
       auto j = *p;
 #ifndef NDEBUG
@@ -95,13 +98,13 @@ struct mykernel {
 #endif
       [[maybe_unused]] int tot = 0;
       auto ftest = [&](unsigned int k) {
-        ALPAKA_ASSERT_OFFLOAD(k < N);
+        ALPAKA_ASSERT_ACC(k < N);
         ++tot;
       };
       forEachInWindow(hist, v[j], v[j], ftest);
 #ifndef NDEBUG
       [[maybe_unused]] int rtot = hist.size(b0);
-      ALPAKA_ASSERT_OFFLOAD(tot == rtot);
+      ALPAKA_ASSERT_ACC(tot == rtot);
 #endif
       tot = 0;
       auto vm = int(v[j]) - DELTA;
@@ -111,13 +114,13 @@ struct mykernel {
       vm = std::min(vm, vmax);
       vp = std::min(vp, vmax);
       vp = std::max(vp, 0);
-      ALPAKA_ASSERT_OFFLOAD(vp >= vm);
+      ALPAKA_ASSERT_ACC(vp >= vm);
       forEachInWindow(hist, vm, vp, ftest);
 #ifndef NDEBUG
       int bp = Hist::bin(vp);
       int bm = Hist::bin(vm);
       rtot = hist.end(bp) - hist.begin(bm);
-      ALPAKA_ASSERT_OFFLOAD(tot == rtot);
+      ALPAKA_ASSERT_ACC(tot == rtot);
 #endif
     }
   }
@@ -163,14 +166,15 @@ void go(const DevHost& host, const Device& device, Queue& queue) {
 }
 
 int main() {
+  auto const& host = cms::alpakatools::host();
+
+  // get the list of devices on the current platform
   auto const& devices = cms::alpakatools::devices<Platform>();
   if (devices.empty()) {
-    std::cout << "No devices available on the platform " << EDM_STRINGIZE(ALPAKA_ACCELERATOR_NAMESPACE)
-              << ", the test will be skipped.\n";
-    return 0;
+    std::cerr << "No devices available for the " EDM_STRINGIZE(ALPAKA_ACCELERATOR_NAMESPACE) " backend, "
+      "the test will be skipped.\n";
+    exit(EXIT_FAILURE);
   }
-
-  auto const& host = cms::alpakatools::host();
 
   // run the test on each device
   for (auto const& device : devices) {

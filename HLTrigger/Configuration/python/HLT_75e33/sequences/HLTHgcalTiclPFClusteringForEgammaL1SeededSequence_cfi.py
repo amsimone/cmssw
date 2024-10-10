@@ -1,0 +1,21 @@
+import FWCore.ParameterSet.Config as cms
+
+from ..modules.hltFilteredLayerClustersCLUE3DHighL1Seeded_cfi import *
+from ..modules.hltHgcalDigis_cfi import *
+from ..modules.hltHgcalDigisL1Seeded_cfi import *
+from ..modules.hltHgcalLayerClustersEEL1Seeded_cfi import *
+from ..modules.hltHgcalLayerClustersHSciL1Seeded_cfi import *
+from ..modules.hltHgcalLayerClustersHSiL1Seeded_cfi import *
+from ..modules.hltHgcalMergeLayerClustersL1Seeded_cfi import *
+from ..modules.hltHGCalRecHitL1Seeded_cfi import *
+from ..modules.hltHGCalUncalibRecHitL1Seeded_cfi import *
+from ..modules.hltL1TEGammaHGCFilteredCollectionProducer_cfi import *
+from ..modules.hltRechitInRegionsHGCAL_cfi import *
+from ..modules.hltParticleFlowClusterHGCalFromTICLL1Seeded_cfi import *
+from ..modules.hltParticleFlowRecHitHGCL1Seeded_cfi import *
+from ..modules.hltParticleFlowSuperClusterHGCalFromTICLL1Seeded_cfi import *
+from ..modules.hltTiclLayerTileProducerL1Seeded_cfi import *
+from ..modules.hltTiclSeedingL1_cfi import *
+from ..modules.hltTiclTrackstersCLUE3DHighL1Seeded_cfi import *
+
+HLTHgcalTiclPFClusteringForEgammaL1SeededSequence = cms.Sequence(hltHgcalDigis+hltL1TEGammaHGCFilteredCollectionProducer+hltHgcalDigisL1Seeded+hltHGCalUncalibRecHitL1Seeded+hltHGCalRecHitL1Seeded+hltParticleFlowRecHitHGCL1Seeded+hltRechitInRegionsHGCAL+hltHgcalLayerClustersEEL1Seeded+hltHgcalLayerClustersHSciL1Seeded+hltHgcalLayerClustersHSiL1Seeded+hltHgcalMergeLayerClustersL1Seeded+hltFilteredLayerClustersCLUE3DHighL1Seeded+hltTiclSeedingL1+hltTiclLayerTileProducerL1Seeded+hltTiclTrackstersCLUE3DHighL1Seeded+hltParticleFlowClusterHGCalFromTICLL1Seeded+hltParticleFlowSuperClusterHGCalFromTICLL1Seeded)

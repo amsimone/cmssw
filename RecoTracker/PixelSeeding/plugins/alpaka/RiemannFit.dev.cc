@@ -1,16 +1,14 @@
-//
-// Author: Felice Pantaleo, CERN
-//
-
-#include <alpaka/alpaka.hpp>
 #include <cstdint>
 
-#include "HeterogeneousCore/AlpakaInterface/interface/memory.h"
-#include "HeterogeneousCore/AlpakaInterface/interface/traits.h"
-#include "DataFormats/TrackingRecHitSoA/interface/TrackingRecHitsSoA.h"
+#include <alpaka/alpaka.hpp>
+
 #include "DataFormats/TrackSoA/interface/alpaka/TrackUtilities.h"
+#include "DataFormats/TrackingRecHitSoA/interface/TrackingRecHitsSoA.h"
+#include "HeterogeneousCore/AlpakaInterface/interface/config.h"
+#include "HeterogeneousCore/AlpakaInterface/interface/memory.h"
 #include "RecoLocalTracker/SiPixelRecHits/interface/pixelCPEforDevice.h"
 #include "RecoTracker/PixelTrackFitting/interface/alpaka/RiemannFit.h"
+
 #include "HelixFit.h"
 #include "CAStructures.h"
 
@@ -41,11 +39,11 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
                                   uint32_t offset) const {
       constexpr uint32_t hitsInFit = N;
 
-      ALPAKA_ASSERT_OFFLOAD(hitsInFit <= nHits);
+      ALPAKA_ASSERT_ACC(hitsInFit <= nHits);
 
-      ALPAKA_ASSERT_OFFLOAD(pfast_fit);
-      ALPAKA_ASSERT_OFFLOAD(foundNtuplets);
-      ALPAKA_ASSERT_OFFLOAD(tupleMultiplicity);
+      ALPAKA_ASSERT_ACC(pfast_fit);
+      ALPAKA_ASSERT_ACC(foundNtuplets);
+      ALPAKA_ASSERT_ACC(tupleMultiplicity);
 
       // look in bin for this hit multiplicity
 
@@ -56,16 +54,16 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
 #endif
 
       const auto nt = riemannFit::maxNumberOfConcurrentFits;
-      for (auto local_idx : cms::alpakatools::elements_with_stride(acc, nt)) {
+      for (auto local_idx : cms::alpakatools::uniform_elements(acc, nt)) {
         auto tuple_idx = local_idx + offset;
         if (tuple_idx >= tupleMultiplicity->size(nHits))
           break;
 
         // get it from the ntuple container (one to one to helix)
         auto tkid = *(tupleMultiplicity->begin(nHits) + tuple_idx);
-        ALPAKA_ASSERT_OFFLOAD(static_cast<int>(tkid) < foundNtuplets->nOnes());
+        ALPAKA_ASSERT_ACC(static_cast<int>(tkid) < foundNtuplets->nOnes());
 
-        ALPAKA_ASSERT_OFFLOAD(foundNtuplets->size(tkid) == nHits);
+        ALPAKA_ASSERT_ACC(foundNtuplets->size(tkid) == nHits);
 
         riemannFit::Map3xNd<N> hits(phits + local_idx);
         riemannFit::Map4d fast_fit(pfast_fit + local_idx);
@@ -83,11 +81,13 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
         }
         riemannFit::fastFit(acc, hits, fast_fit);
 
-        // no NaN here....
-        ALPAKA_ASSERT_OFFLOAD(fast_fit(0) == fast_fit(0));
-        ALPAKA_ASSERT_OFFLOAD(fast_fit(1) == fast_fit(1));
-        ALPAKA_ASSERT_OFFLOAD(fast_fit(2) == fast_fit(2));
-        ALPAKA_ASSERT_OFFLOAD(fast_fit(3) == fast_fit(3));
+#ifdef RIEMANN_DEBUG
+        // any NaN value should cause the track to be rejected at a later stage
+        ALPAKA_ASSERT_ACC(not alpaka::math::isnan(acc, fast_fit(0)));
+        ALPAKA_ASSERT_ACC(not alpaka::math::isnan(acc, fast_fit(1)));
+        ALPAKA_ASSERT_ACC(not alpaka::math::isnan(acc, fast_fit(2)));
+        ALPAKA_ASSERT_ACC(not alpaka::math::isnan(acc, fast_fit(3)));
+#endif
       }
     }
   };
@@ -105,14 +105,14 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
                                   double *__restrict__ pfast_fit_input,
                                   riemannFit::CircleFit *circle_fit,
                                   uint32_t offset) const {
-      ALPAKA_ASSERT_OFFLOAD(circle_fit);
-      ALPAKA_ASSERT_OFFLOAD(N <= nHits);
+      ALPAKA_ASSERT_ACC(circle_fit);
+      ALPAKA_ASSERT_ACC(N <= nHits);
 
       // same as above...
 
       // look in bin for this hit multiplicity
       const auto nt = riemannFit::maxNumberOfConcurrentFits;
-      for (auto local_idx : cms::alpakatools::elements_with_stride(acc, nt)) {
+      for (auto local_idx : cms::alpakatools::uniform_elements(acc, nt)) {
         auto tuple_idx = local_idx + offset;
         if (tuple_idx >= tupleMultiplicity->size(nHits))
           break;
@@ -152,14 +152,14 @@ namespace ALPAKA_ACCELERATOR_NAMESPACE {
                                   double *__restrict__ pfast_fit_input,
                                   riemannFit::CircleFit *__restrict__ circle_fit,
                                   uint32_t offset) const {
-      ALPAKA_ASSERT_OFFLOAD(circle_fit);
-      ALPAKA_ASSERT_OFFLOAD(N <= nHits);
+      ALPAKA_ASSERT_ACC(circle_fit);
+      ALPAKA_ASSERT_ACC(N <= nHits);
 
       // same as above...
 
       // look in bin for this hit multiplicity
       const auto nt = riemannFit::maxNumberOfConcurrentFits;
-      for (auto local_idx : cms::alpakatools::elements_with_stride(acc, nt)) {
+      for (auto local_idx : cms::alpakatools::uniform_elements(acc, nt)) {
         auto tuple_idx = local_idx + offset;
         if (tuple_idx >= tupleMultiplicity->size(nHits))
           break;

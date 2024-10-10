@@ -286,7 +286,7 @@ namespace edm {
         ExternalWork() = default;
         ExternalWork(ExternalWork const&) = delete;
         ExternalWork& operator=(ExternalWork const&) = delete;
-        virtual ~ExternalWork() noexcept(false){};
+        virtual ~ExternalWork() noexcept(false) {}
 
         virtual void acquire(Event const&, edm::EventSetup const&, WaitingTaskWithArenaHolder) = 0;
       };
@@ -296,7 +296,7 @@ namespace edm {
         WatchLuminosityBlocks() = default;
         WatchLuminosityBlocks(WatchLuminosityBlocks const&) = delete;
         WatchLuminosityBlocks& operator=(WatchLuminosityBlocks const&) = delete;
-        virtual ~WatchLuminosityBlocks() noexcept(false){};
+        virtual ~WatchLuminosityBlocks() noexcept(false) {}
 
         // virtual void beginLuminosityBlock(edm::LuminosityBlock const&, edm::EventSetup const&) = 0;
         // virtual void endLuminosityBlock(edm::LuminosityBlock const&, edm::EventSetup const&) {}
@@ -307,7 +307,7 @@ namespace edm {
         WatchRuns() = default;
         WatchRuns(WatchRuns const&) = delete;
         WatchRuns& operator=(WatchRuns const&) = delete;
-        virtual ~WatchRuns() noexcept(false){};
+        virtual ~WatchRuns() noexcept(false) {}
 
         // virtual void beginRun(edm::Run const&, edm::EventSetup const&) = 0;
         // virtual void endRun(edm::Run const&, edm::EventSetup const&) {}
@@ -317,7 +317,7 @@ namespace edm {
         Transformer() = default;
         Transformer(Transformer const&) = delete;
         Transformer& operator=(Transformer const&) = delete;
-        ~Transformer() noexcept(false) override{};
+        ~Transformer() noexcept(false) override {}
 
         template <typename G, typename F>
         void registerTransform(ProducerBase::BranchAliasSetterT<G> iSetter,
@@ -365,17 +365,17 @@ namespace edm {
         }
 
       private:
-        size_t transformIndex_(edm::BranchDescription const& iBranch) const final {
+        size_t transformIndex_(edm::BranchDescription const& iBranch) const noexcept final {
           return TransformerBase::findMatchingIndex(*this, iBranch);
         }
-        ProductResolverIndex transformPrefetch_(std::size_t iIndex) const final {
+        ProductResolverIndex transformPrefetch_(std::size_t iIndex) const noexcept final {
           return TransformerBase::prefetchImp(iIndex);
         }
         void transformAsync_(WaitingTaskHolder iTask,
                              std::size_t iIndex,
                              edm::EventForTransformer& iEvent,
                              edm::ActivityRegistry* iAct,
-                             ServiceWeakToken const& iToken) const final {
+                             ServiceWeakToken const& iToken) const noexcept final {
           return TransformerBase::transformImpAsync(std::move(iTask), iIndex, iAct, *this, iEvent);
         }
         void extendUpdateLookup(BranchType iBranchType, ProductResolverIndexHelper const& iHelper) override {
@@ -390,14 +390,14 @@ namespace edm {
         Accumulator() = default;
         Accumulator(Accumulator const&) = delete;
         Accumulator& operator=(Accumulator const&) = delete;
-        ~Accumulator() noexcept(false) override{};
+        ~Accumulator() noexcept(false) override {}
 
         virtual void accumulate(Event const& ev, EventSetup const& es) = 0;
 
         void produce(Event& ev, EventSetup const& es) final { accumulate(ev, es); }
       };
     }  // namespace impl
-  }    // namespace stream
+  }  // namespace stream
 }  // namespace edm
 
 #endif

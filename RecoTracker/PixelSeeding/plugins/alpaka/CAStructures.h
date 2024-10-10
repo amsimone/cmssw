@@ -1,5 +1,5 @@
-#ifndef RecoPixelVertexing_PixelTriplets_CAStructures_h
-#define RecoPixelVertexing_PixelTriplets_CAStructures_h
+#ifndef RecoTracker_PixelSeeding_plugins_alpaka_CAStructures_h
+#define RecoTracker_PixelSeeding_plugins_alpaka_CAStructures_h
 
 #include "HeterogeneousCore/AlpakaInterface/interface/SimpleVector.h"
 #include "HeterogeneousCore/AlpakaInterface/interface/VecArray.h"
@@ -31,7 +31,7 @@ namespace caStructures {
   template <typename TrackerTraits>
   using HitToTupleT =
       cms::alpakatools::OneToManyAssocRandomAccess<typename TrackerTraits::tindex_type,
-                                                   TrackerTraits::maxNumberOfHits,
+                                                   -1,
                                                    TrackerTraits::maxHitsForContainers>;  // 3.5 should be enough
 
   template <typename TrackerTraits>
@@ -49,4 +49,4 @@ namespace caStructures {
 
 }  // namespace caStructures
 
-#endif
+#endif  // RecoTracker_PixelSeeding_plugins_alpaka_CAStructures_h
